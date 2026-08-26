@@ -1,0 +1,6 @@
+@SewaRent_Api_HostAddress = http://localhost:5006
+
+GET {{SewaRent_Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
