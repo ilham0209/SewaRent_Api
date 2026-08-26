@@ -8,7 +8,11 @@ namespace SewaRent_Api.Features.Auth;
 
 public static class Login
 {
-    public record Command(string Email, string Password) : IRequest<Response>;
+    public class Command : IRequest<Response>
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
 
     public record Response(string AccessToken, DateTime ExpiresAt, UserDto User);
 
@@ -23,7 +27,7 @@ public static class Login
         }
     }
 
-    public class Handler(UserDbContext db, IConfiguration configuration)
+    public class Handler(SewaRentDbContext db, IConfiguration configuration)
         : IRequestHandler<Command, Response>
     {
         public async Task<Response> Handle(Command request, CancellationToken ct)

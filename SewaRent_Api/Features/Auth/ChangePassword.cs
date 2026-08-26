@@ -9,7 +9,11 @@ namespace SewaRent_Api.Features.Auth;
 
 public static class ChangePassword
 {
-    public record Command(string CurrentPassword, string NewPassword) : IRequest<Response>;
+    public class Command : IRequest<Response>
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+    }
 
     public record Response(bool Success);
 
@@ -22,7 +26,7 @@ public static class ChangePassword
         }
     }
 
-    public class Handler(UserDbContext db, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command, Response>
     {
         public async Task<Response> Handle(Command request, CancellationToken ct)

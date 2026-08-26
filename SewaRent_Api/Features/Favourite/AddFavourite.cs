@@ -18,7 +18,7 @@ public static class AddFavourite
         }
     }
 
-    public class Handler(FavouriteDbContext favouriteDb, PropertyDbContext propertyDb,
+    public class Handler(SewaRentDbContext db,
         IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command>
     {
@@ -27,26 +27,26 @@ public static class AddFavourite
             var userId = Guid.Parse(httpContextAccessor.HttpContext!.User
                 .FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var propertyExists = await propertyDb.Properties
+            var propertyExists = await db.Properties
                 .AnyAsync(p => p.Id == request.PropertyId, ct);
 
             if (!propertyExists)
                 throw new InvalidOperationException("Property not found.");
 
-            var alreadyFavourited = await favouriteDb.Favourites
+            var alreadyFavourited = await db.Favourites
                 .AnyAsync(f => f.UserId == userId && f.PropertyId == request.PropertyId, ct);
 
             if (alreadyFavourited)
                 throw new InvalidOperationException("Property is already in favourites.");
 
-            favouriteDb.Favourites.Add(new Shared.Domain.Favourite.FavouriteEntity
+            db.Favourites.Add(new Shared.Domain.Favourite.FavouriteEntity
             {
                 UserId = userId,
                 PropertyId = request.PropertyId,
                 CreatedAt = DateTime.UtcNow
             });
 
-            await favouriteDb.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(ct);
         }
     }
 }

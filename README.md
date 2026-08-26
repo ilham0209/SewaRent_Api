@@ -53,7 +53,6 @@ The mobile application communicates **only** with the SewaRent API.
 | API Documentation | OpenAPI + Scalar |
 | CQRS / Request Pipeline | MediatR |
 | Validation | FluentValidation |
-| Tests | xUnit, Moq, EF Core InMemory |
 | IDE | Visual Studio |
 | Source Control | Git / GitHub |
 
@@ -215,11 +214,8 @@ SewaRent_Api/
 │   │   │   └── QueryableExtensions.cs
 │   │   ├── Infrastructure/
 │   │   │   ├── Migrations/
-│   │   │   │   ├── CarDb/
-│   │   │   │   └── ExampleDb/
 │   │   │   └── Persistence/
-│   │   │       ├── CarDbContext.cs
-│   │   │       └── ExampleDbContext.cs
+│   │   │       └── SewaRentDbContext.cs
 │   │   ├── Middleware/
 │   │   │   └── GlobalExceptionHandlingMiddleware.cs
 │   │   └── Models/
@@ -228,16 +224,8 @@ SewaRent_Api/
 │   │
 │   ├── appsettings.json
 │   ├── appsettings.Development.json
-│   ├── Program.cs
-│   └── SewaRent-Api-Example.http
-│
-└── SewaRent_Api.Tests/
-    ├── Controllers/
-    ├── Features/
-    └── SewaRent_Api.Tests.csproj
+│   └── Program.cs
 ```
-
-All project code resides in `SewaRent_Api` and all test code in `SewaRent_Api.Tests`.
 
 ---
 
@@ -245,7 +233,7 @@ All project code resides in `SewaRent_Api` and all test code in `SewaRent_Api.Te
 
 ### `Program.cs`
 
-Application entry point. Registers services, middleware, EF Core contexts, and applies migrations on startup.
+Application entry point. Registers services, middleware, EF Core context, and applies migrations on startup.
 
 ### `Controllers/`
 
@@ -263,15 +251,11 @@ Visual Studio launch settings.
 
 Cross-feature technical functionality shared across modules:
 
-- `Domain/` — entities and base classes
+- `Domain/` — entities and base classes (one file per entity table)
 - `Extensions/` — reusable query extensions
-- `Infrastructure/` — EF Core DbContexts and migrations
+- `Infrastructure/` — EF Core DbContext and migrations
 - `Middleware/` — global exception handling
 - `Models/` — reusable request/response models (e.g. `DataGridRequest`, `DataGridResponse`)
-
-### `SewaRent_Api.Tests/`
-
-Unit and integration tests, written before features (TDD).
 
 ---
 
@@ -354,10 +338,6 @@ Requests are validated with FluentValidation before they reach business logic.
 
 List endpoints use `DataGridRequest` / `DataGridResponse` and `QueryableExtensions` for filtering, sorting, and paging.
 
-### Testing
-
-Write tests first (TDD), then implement the feature to make them pass.
-
 ---
 
 ## 10. API Integration Principle
@@ -430,7 +410,7 @@ The API must enforce authorization. The backend is the security boundary; the mo
 ### Phase 1 — API Foundation (current example baseline)
 
 - [x] Create solution and project structure
-- [x] Configure EF Core and DbContexts
+- [x] Configure EF Core and DbContext
 - [x] Configure migrations
 - [x] Configure CORS
 - [x] Configure OpenAPI + Scalar
@@ -441,7 +421,6 @@ The API must enforce authorization. The backend is the security boundary; the mo
 
 - [x] Example module (controller, features, entities)
 - [x] Car module (entities, DbContext, migrations)
-- [ ] Example module tests
 
 ### Phase 3 — SewaRent Backend
 
@@ -582,9 +561,7 @@ The API backend remains independently deployable from the mobile application.
 1. Decide a domain name and create a folder in `Shared/Domain/`.
 2. Create the entity in `Shared/Domain/{DOMAIN_NAME}/`, e.g. `Shared/Domain/Example/ExampleEntities.cs`.
 3. Create a migration file for the entity:
-   1. In Package Manager Console run `Add-Migration -Name {NAME} -Context {DOMAIN_NAME}DbContext`.
-   2. Migration files are created in `Shared/Infrastructure/Migrations/{DOMAIN_NAME}/` with a timestamp.
+   1. In Package Manager Console run `Add-Migration -Name {NAME} -Context SewaRentDbContext`.
+   2. Migration files are created in `Shared/Infrastructure/Migrations/` with a timestamp.
 4. Run the solution; migrations run automatically to the latest version.
-5. Write tests first (TDD) for the new feature.
-6. Implement the feature with the goal of passing all newly created test cases.
-7. Create a Pull Request (PR) to the master branch once fully tested.
+5. Implement the feature.

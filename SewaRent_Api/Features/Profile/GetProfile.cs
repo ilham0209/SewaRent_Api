@@ -11,7 +11,7 @@ public static class GetProfile
 
     public record Response(Guid Id, string FullName, string Email, string? PhoneNumber, string? ProfileImageUrl);
 
-    public class Handler(UserDbContext db) : IRequestHandler<Query, Response?>
+    public class Handler(SewaRentDbContext db) : IRequestHandler<Query, Response?>
     {
         public async Task<Response?> Handle(Query request, CancellationToken ct)
         {

@@ -29,7 +29,7 @@ public static class GetByIdProperty
 
     public record ImageDto(Guid Id, string ImageUrl, bool IsPrimary, int SortOrder);
 
-    public class Handler(PropertyDbContext db) : IRequestHandler<Query, Response?>
+    public class Handler(SewaRentDbContext db) : IRequestHandler<Query, Response?>
     {
         public async Task<Response?> Handle(Query request, CancellationToken ct)
         {

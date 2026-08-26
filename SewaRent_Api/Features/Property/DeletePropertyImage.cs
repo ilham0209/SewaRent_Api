@@ -9,7 +9,7 @@ public static class DeletePropertyImage
 {
     public record Command(Guid PropertyId, Guid ImageId) : IRequest;
 
-    public class Handler(PropertyDbContext db, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command>
     {
         public async Task Handle(Command request, CancellationToken ct)

@@ -24,8 +24,7 @@ public static class GetByIdRentalRequest
         DateTime? DecisionAt,
         string? DecisionNote);
 
-    public class Handler(RentalRequestDbContext rentalDb, PropertyDbContext propertyDb,
-        UserDbContext userDb, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Query, Response?>
     {
         public async Task<Response?> Handle(Query request, CancellationToken ct)
@@ -33,20 +32,20 @@ public static class GetByIdRentalRequest
             var userId = Guid.Parse(httpContextAccessor.HttpContext!.User
                 .FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var rentalRequest = await rentalDb.RentalRequests
+            var rentalRequest = await db.RentalRequests
                 .AsNoTracking()
                 .FirstOrDefaultAsync(rr => rr.Id == request.Id && !rr.IsDeleted, ct);
 
             if (rentalRequest is null)
                 return null;
 
-            var property = await propertyDb.Properties
+            var property = await db.Properties
                 .FirstOrDefaultAsync(p => p.Id == rentalRequest.PropertyId, ct);
 
-            var tenant = await userDb.Users
+            var tenant = await db.Users
                 .FirstOrDefaultAsync(u => u.Id == rentalRequest.TenantId, ct);
 
-            var status = await rentalDb.RentalRequestStatuses
+            var status = await db.RentalRequestStatuses
                 .FirstOrDefaultAsync(s => s.Id == rentalRequest.StatusId, ct);
 
             if (property is null || tenant is null || status is null)

@@ -18,7 +18,7 @@ public static class GetMyRentalRequest
         DateTime RequestedAt,
         DateTime? DecisionAt);
 
-    public class Handler(RentalRequestDbContext rentalDb, PropertyDbContext propertyDb,
+    public class Handler(SewaRentDbContext db,
         IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Query, DataGridResponse<RentalRequestSummary>>
     {
@@ -27,9 +27,9 @@ public static class GetMyRentalRequest
             var tenantId = Guid.Parse(httpContextAccessor.HttpContext!.User
                 .FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var query = from rr in rentalDb.RentalRequests
-                        join p in propertyDb.Properties on rr.PropertyId equals p.Id
-                        join s in rentalDb.RentalRequestStatuses on rr.StatusId equals s.Id
+            var query = from rr in db.RentalRequests
+                        join p in db.Properties on rr.PropertyId equals p.Id
+                        join s in db.RentalRequestStatuses on rr.StatusId equals s.Id
                         where rr.TenantId == tenantId && !rr.IsDeleted
                         orderby rr.RequestedAt descending
                         select new RentalRequestSummary(

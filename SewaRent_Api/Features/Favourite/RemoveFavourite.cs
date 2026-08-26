@@ -9,7 +9,7 @@ public static class RemoveFavourite
 {
     public record Command(Guid PropertyId) : IRequest;
 
-    public class Handler(FavouriteDbContext db, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command>
     {
         public async Task Handle(Command request, CancellationToken ct)

@@ -19,7 +19,7 @@ public static class GetAllFavourite
         string? ImageUrl,
         DateTime SavedAt);
 
-    public class Handler(FavouriteDbContext favouriteDb, PropertyDbContext propertyDb,
+    public class Handler(SewaRentDbContext db,
         IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Query, DataGridResponse<FavouriteProperty>>
     {
@@ -28,8 +28,8 @@ public static class GetAllFavourite
             var userId = Guid.Parse(httpContextAccessor.HttpContext!.User
                 .FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var query = from f in favouriteDb.Favourites
-                        join p in propertyDb.Properties on f.PropertyId equals p.Id
+            var query = from f in db.Favourites
+                        join p in db.Properties on f.PropertyId equals p.Id
                         where f.UserId == userId && !p.IsDeleted
                         orderby f.CreatedAt descending
                         select new FavouriteProperty(
@@ -38,7 +38,7 @@ public static class GetAllFavourite
                             p.MonthlyRent,
                             p.City,
                             p.State,
-                            propertyDb.PropertyImages
+                            db.PropertyImages
                                 .Where(i => i.PropertyId == p.Id && i.IsPrimary && !i.IsDeleted)
                                 .Select(i => i.ImageUrl)
                                 .FirstOrDefault(),
