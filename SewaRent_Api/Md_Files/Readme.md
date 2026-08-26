@@ -184,7 +184,7 @@ The mobile app maps each screen to API endpoints:
 
 ## 6. API File Structure
 
-This is the current target structure for the SewaRent domains, following the `imas-dotnet-architecture` vertical-slice convention. `Controllers/` and `Features/` are organised **per business capability**; `Shared/Domain/` and the DbContexts are organised **per data domain** — so `Auth` and `Profile` share the same `User` domain/DbContext (both operate on `Users`/`Roles`/`UserRoles`), and `Property` bundles `PropertyTypes` and `PropertyImages` together with `Properties`.
+This is the current target structure for the SewaRent domains, following the `imas-dotnet-architecture` vertical-slice convention. `Controllers/` and `Features/` are organised **per business capability**; `Shared/Domain/` and the DbContext are organised **per data domain** — so `Auth` and `Profile` share the same `User` domain (both operate on `Users`/`Roles`/`UserRoles`), and `Property` bundles `PropertyTypes` and `PropertyImages` together with `Properties`. All domains share a **single database** named `SewaRent`.
 
 ```text
 SewaRent_Api/
@@ -254,11 +254,9 @@ SewaRent_Api/
 │   │   ├── Extensions/
 │   │   │   └── QueryableExtensions.cs
 │   │   ├── Infrastructure/
+│   │   │   ├── Behavior/
+│   │   │   │   └── ValidationBehavior.cs
 │   │   │   ├── Migrations/
-│   │   │   │   ├── UserDb/
-│   │   │   │   ├── PropertyDb/
-│   │   │   │   ├── FavouriteDb/
-│   │   │   │   └── RentalRequestDb/
 │   │   │   └── Persistence/
 │   │   │       ├── UserDbContext.cs
 │   │   │       ├── PropertyDbContext.cs
@@ -272,8 +270,7 @@ SewaRent_Api/
 │   │
 │   ├── appsettings.json
 │   ├── appsettings.Development.json
-│   ├── Program.cs
-│   └── SewaRent-Api.http
+│   └── Program.cs
 │
 └── SewaRent_Api.Tests/
     ├── Controllers/
@@ -293,21 +290,23 @@ SewaRent_Api/
 
 Domain-to-table reference (see `DATABASE.md` for full column definitions):
 
-| Domain / DbContext | Entities | Tables |
+| Domain | Entities | Tables |
 |---|---|---|
-| `User` | `UserEntity`, `RoleEntity`, `UserRoleEntity` | `Users`, `Roles`, `UserRoles` |
-| `Property` | `PropertyEntity`, `PropertyTypeEntity`, `PropertyImageEntity` | `Properties`, `PropertyTypes`, `PropertyImages` |
-| `Favourite` | `FavouriteEntity` | `Favourites` |
-| `RentalRequest` | `RentalRequestEntity`, `RentalRequestStatusEntity` | `RentalRequests`, `RentalRequestStatuses` |
+| `User` | `UserEntity`, `RoleEntity`, `UserRoleEntity` | `US_Users`, `US_Roles`, `US_UserRoles` |
+| `Property` | `PropertyEntity`, `PropertyTypeEntity`, `PropertyImageEntity` | `PR_Property`, `PR_PropertyTypes`, `PR_PropertyImages` |
+| `Favourite` | `FavouriteEntity` | `FA_Favourites` |
+| `RentalRequest` | `RentalRequestEntity`, `RentalRequestStatusEntity` | `RR_RentalRequests`, `RR_RentalRequestStatuses` |
+
+All domains share a **single database** named `SewaRent`. Each domain uses a table prefix to avoid naming collisions: `US_` (User), `PR_` (Property), `FA_` (Favourite), `RR_` (RentalRequest).
 
 All project code resides in `SewaRent_Api` and all test code in `SewaRent_Api.Tests`.
 
 ### Feature notes
 
-- `AuthController` and `ProfileController` are separate controllers/feature folders (different HTTP concerns: unauthenticated auth flow vs. authenticated self-service profile), but both read/write through the same `UserDbContext`.
+- `AuthController` and `ProfileController` are separate controllers/feature folders (different HTTP concerns: unauthenticated auth flow vs. authenticated self-service profile), but both read/write through `UserDbContext` via the `User` domain.
 - `PropertyController` handles property CRUD/search; `PropertyImageController` is split out because image upload uses `multipart/form-data` and a distinct request/response shape, even though it shares `PropertyDbContext`.
-- `RentalRequestController` is the tenant-facing surface (`create`, `my`, `{id}`, `cancel`); `LandlordRentalRequestController` is the landlord-facing surface (`list`, `approve`, `reject`). Both use the same `RentalRequestDbContext` — the split mirrors the two different authorization rules (tenant owns the request vs. landlord owns the property).
-- New modules from the roadmap (Payments, Notifications, Reports, etc.) should each get their own `Controllers/{Domain}`, `Features/{Domain}`, `Shared/Domain/{Domain}`, and `{Domain}DbContext` when their requirements are approved — do not fold them into an existing domain unless they genuinely share the same tables.
+- `RentalRequestController` is the tenant-facing surface (`create`, `my`, `{id}`, `cancel`); `LandlordRentalRequestController` is the landlord-facing surface (`list`, `approve`, `reject`). Both use `RentalRequestDbContext` — the split mirrors the two different authorization rules (tenant owns the request vs. landlord owns the property).
+- New modules from the roadmap (Payments, Notifications, Reports, etc.) should each get their own `Controllers/{Domain}`, `Features/{Domain}`, `Shared/Domain/{Domain}`, and corresponding table prefix when their requirements are approved — do not fold them into an existing domain unless they genuinely share the same tables.
 
 ---
 
@@ -315,7 +314,7 @@ All project code resides in `SewaRent_Api` and all test code in `SewaRent_Api.Te
 
 ### `Program.cs`
 
-Application entry point. Registers services, middleware, EF Core contexts, and applies migrations on startup.
+Application entry point. Registers services, middleware, EF Core context, and applies migrations on startup.
 
 ### `Controllers/`
 
@@ -335,7 +334,7 @@ Cross-feature technical functionality shared across modules:
 
 - `Domain/` — entities and base classes
 - `Extensions/` — reusable query extensions
-- `Infrastructure/` — EF Core DbContexts and migrations
+- `Infrastructure/` — EF Core DbContext and migrations
 - `Middleware/` — global exception handling
 - `Models/` — reusable request/response models (e.g. `DataGridRequest`, `DataGridResponse`)
 
@@ -413,7 +412,7 @@ MediatR Request Handler (Features)
 EF Core DbContext (Shared/Infrastructure/Persistence)
       |
       v
-Microsoft SQL Server
+Microsoft SQL Server (SewaRent database)
 ```
 
 ### Validation
@@ -452,7 +451,7 @@ SewaRent API      <-- this repository
       |
       | EF Core
       v
-MSSQL
+MSSQL (SewaRent database)
 ```
 
 The API then communicates with MSSQL. Endpoints must be documented before the mobile app implements them.
@@ -500,7 +499,7 @@ The API must enforce authorization. The backend is the security boundary; the mo
 ### Phase 1 — API Foundation (baseline)
 
 - [x] Create solution and project structure
-- [x] Configure EF Core and DbContexts
+- [x] Configure EF Core and DbContext
 - [x] Configure migrations
 - [x] Configure CORS
 - [x] Configure OpenAPI + Scalar
@@ -509,10 +508,10 @@ The API must enforce authorization. The backend is the security boundary; the mo
 
 ### Phase 2 — SewaRent Domains
 
-- [ ] User domain (entities, DbContext, migrations) — backs Auth + Profile
-- [ ] Property domain (entities, DbContext, migrations) — Properties, PropertyTypes, PropertyImages
-- [ ] Favourite domain (entities, DbContext, migrations)
-- [ ] RentalRequest domain (entities, DbContext, migrations) — RentalRequests, RentalRequestStatuses
+- [ ] User domain (entities, migrations) — backs Auth + Profile
+- [ ] Property domain (entities, migrations) — Properties, PropertyTypes, PropertyImages
+- [ ] Favourite domain (entities, migrations)
+- [ ] RentalRequest domain (entities, migrations) — RentalRequests, RentalRequestStatuses
 - [ ] Feature tests for each domain
 
 ### Phase 3 — SewaRent Backend
@@ -551,7 +550,7 @@ Testing
 Production
 ```
 
-Connection strings and settings are stored in `appsettings.json` and environment-specific files. Sensitive values must not be committed to source control.
+Connection strings and settings are stored in `appsettings.json` and environment-specific files. Sensitive values must not be committed to source control. All environments connect to a single database named `SewaRent`.
 
 Example concept:
 
@@ -612,7 +611,7 @@ AI coding agents working on SewaRent should:
 **Framework:** ASP.NET Core Web API
 **Language:** C#
 **Version:** .NET 10
-**Database:** Microsoft SQL Server
+**Database:** Microsoft SQL Server — single database `SewaRent`
 **Current Stage:** Phase 1/2 — Foundation + SewaRent domain scaffolding
 
 ---
@@ -648,7 +647,7 @@ The API backend remains independently deployable from the mobile application.
 
 1. Clone this project to a local machine.
 2. Open the solution (`SewaRent_Api.sln`) in Visual Studio.
-3. Edit `appsettings.json` accordingly for the database connection.
+3. Edit `appsettings.json` accordingly for the database connection (single `SewaRent` database).
 4. Run the solution; Visual Studio will open a browser.
 5. Manually navigate to `https://localhost:7062/scalar` to view the API reference.
 
@@ -657,8 +656,8 @@ The API backend remains independently deployable from the mobile application.
 1. Decide a domain name and create a folder in `Shared/Domain/`.
 2. Create the entity in `Shared/Domain/{DOMAIN_NAME}/`, e.g. `Shared/Domain/Property/PropertyEntities.cs`.
 3. Create a migration file for the entity:
-   1. In Package Manager Console run `Add-Migration -Name {NAME} -Context {DOMAIN_NAME}DbContext`.
-   2. Migration files are created in `Shared/Infrastructure/Migrations/{DOMAIN_NAME}Db/` with a timestamp.
+    1. In Package Manager Console run `Add-Migration -Name {NAME} -Context UserDbContext` (or `PropertyDbContext`, `FavouriteDbContext`, `RentalRequestDbContext`).
+   2. Migration files are created in `Shared/Infrastructure/Migrations/` with a timestamp.
 4. Run the solution; migrations run automatically to the latest version.
 5. Write tests first (TDD) for the new feature.
 6. Implement the feature with the goal of passing all newly created test cases.

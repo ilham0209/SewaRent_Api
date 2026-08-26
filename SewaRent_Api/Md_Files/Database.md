@@ -1,6 +1,7 @@
 # SewaRent — Database Specification
 
-> **Database:** Microsoft SQL Server
+> **Database:** Microsoft SQL Server (MSSQL)
+> **Database name:** SewaRent
 > **ORM:** Entity Framework Core
 > **Database access:** SewaRent API only
 >
@@ -20,9 +21,12 @@ SewaRent API
       | EF Core
       v
 Microsoft SQL Server
+      |
+      v
+SewaRent (single database)
 ```
 
-The API is the only application component that directly accesses MSSQL.
+The API is the only application component that directly accesses MSSQL. All domain tables reside within a **single database** named **SewaRent**.
 
 ---
 
@@ -42,6 +46,16 @@ The API is the only application component that directly accesses MSSQL.
 12. Never expose database credentials to Flutter.
 13. Every entity with a single surrogate key inherits `BaseClass` (see §3.1) instead of redeclaring audit columns.
 14. All table and column names use **PascalCase**.
+15. All table names use a **domain prefix** separated by underscore (e.g. `US_Users`, `PR_Property`).
+
+### Table Naming Convention
+
+| Domain | Prefix | Tables |
+|---|---|---|
+| User | `US_` | US_Users, US_Roles, US_UserRoles |
+| Property | `PR_` | PR_Property, PR_PropertyTypes, PR_PropertyImages |
+| Favourite | `FA_` | FA_Favourites |
+| Rental Request | `RR_` | RR_RentalRequests, RR_RentalRequestStatuses |
 
 ---
 
@@ -50,6 +64,8 @@ The API is the only application component that directly accesses MSSQL.
 ### 3.1 `BaseClass`
 
 Every entity that has a single surrogate primary key inherits from a shared `BaseClass` (`Shared/Domain/BaseClass.cs`), per the `imas-dotnet-architecture` convention. This keeps audit + soft-delete fields consistent across all domains and out of individual feature entities.
+
+`BaseClass` itself does **not** carry a table-name prefix — it is an inherited base, not a table.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -86,7 +102,7 @@ public abstract class BaseClass
 
 ### 3.2 Business status vs. `IsDeleted`
 
-Some tables also carry their **own** business-status flag (e.g. `IsActive` on `Users`, `Properties`, `PropertyTypes`, `Amenities`). This is a distinct concept from `IsDeleted`:
+Some tables also carry their **own** business-status flag (e.g. `IsActive` on `US_Users`, `PR_Property`, `PR_PropertyTypes`). This is a distinct concept from `IsDeleted`:
 
 | Flag | Meaning | Who sets it |
 |---|---|---|
@@ -97,7 +113,7 @@ Both can be `false`/`true` independently — a record can be `IsActive = false` 
 
 ### 3.3 Junction / composite-key tables
 
-Pure many-to-many junction tables with a **composite primary key** (`UserRoles`, `Favourites`, `PropertyAmenitiesMap`) do **not** inherit `BaseClass` — they have no single `Id` to hang it on. These keep a minimal `CreatedAt` (`datetime2`) column only, and are hard-deleted on unlink (removing a role/favourite/amenity mapping is not a business event that needs historical traceability).
+Pure many-to-many junction tables with a **composite primary key** (`US_UserRoles`, `FA_Favourites`, `PropertyAmenitiesMap`) do **not** inherit `BaseClass` — they have no single `Id` to hang it on. These keep a minimal `CreatedAt` (`datetime2`) column only, and are hard-deleted on unlink (removing a role/favourite/amenity mapping is not a business event that needs historical traceability).
 
 ---
 
@@ -106,15 +122,15 @@ Pure many-to-many junction tables with a **composite primary key** (`UserRoles`,
 Initial planned tables:
 
 ```text
-Users
-Roles
-UserRoles
-Properties
-PropertyTypes
-PropertyImages
-Favourites
-RentalRequests
-RentalRequestStatuses
+US_Users
+US_Roles
+US_UserRoles
+PR_Property
+PR_PropertyTypes
+PR_PropertyImages
+FA_Favourites
+RR_RentalRequests
+RR_RentalRequestStatuses
 ```
 
 Optional/future tables:
@@ -134,7 +150,7 @@ Reports
 
 # 5. Users
 
-## Table: `Users`
+## Table: `US_Users`
 
 Stores application users. Inherits `BaseClass`.
 
@@ -153,11 +169,11 @@ Stores application users. Inherits `BaseClass`.
 ### Relationships
 
 ```text
-Users
- ├── UserRoles
- ├── Properties (landlord)
- ├── Favourites
- └── RentalRequests (tenant)
+US_Users
+ ├── US_UserRoles
+ ├── PR_Property (landlord)
+ ├── FA_Favourites
+ └── RR_RentalRequests (tenant)
 ```
 
 ### Used by
@@ -175,7 +191,7 @@ Users
 
 # 6. Roles
 
-## Table: `Roles`
+## Table: `US_Roles`
 
 Stores system roles. Inherits `BaseClass`.
 
@@ -206,7 +222,7 @@ Admin
 
 # 7. UserRoles
 
-## Table: `UserRoles`
+## Table: `US_UserRoles`
 
 Many-to-many relationship between users and roles. **Composite key — does not inherit `BaseClass`** (see §3.3).
 
@@ -214,14 +230,14 @@ Many-to-many relationship between users and roles. **Composite key — does not 
 
 | Column | Type | Notes |
 |---|---|---|
-| UserId | uniqueidentifier | PK/FK → Users.Id |
-| RoleId | uniqueidentifier | PK/FK → Roles.Id |
+| UserId | uniqueidentifier | PK/FK → US_Users.Id |
+| RoleId | uniqueidentifier | PK/FK → US_Roles.Id |
 | CreatedAt | datetime2 | Required |
 
 ### Relationships
 
 ```text
-Users 1 ─── * UserRoles * ─── 1 Roles
+US_Users 1 ─── * US_UserRoles * ─── 1 US_Roles
 ```
 
 ### Used by
@@ -234,7 +250,7 @@ Users 1 ─── * UserRoles * ─── 1 Roles
 
 # 8. PropertyTypes
 
-## Table: `PropertyTypes`
+## Table: `PR_PropertyTypes`
 
 Defines the type of rental property. Inherits `BaseClass`.
 
@@ -268,9 +284,9 @@ Studio
 
 ---
 
-# 9. Properties
+# 9. Property
 
-## Table: `Properties`
+## Table: `PR_Property`
 
 Main rental-property table. Inherits `BaseClass`.
 
@@ -279,8 +295,8 @@ Main rental-property table. Inherits `BaseClass`.
 | Column | Type | Notes |
 |---|---|---|
 | *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
-| LandlordId | uniqueidentifier | FK → Users.Id |
-| PropertyTypeId | uniqueidentifier | FK → PropertyTypes.Id |
+| LandlordId | uniqueidentifier | FK → US_Users.Id |
+| PropertyTypeId | uniqueidentifier | FK → PR_PropertyTypes.Id |
 | Title | nvarchar(200) | Required |
 | Description | nvarchar(max) | Nullable |
 | MonthlyRent | decimal(18,2) | Required |
@@ -301,16 +317,16 @@ Main rental-property table. Inherits `BaseClass`.
 ### Relationships
 
 ```text
-Users
+US_Users
   |
   | LandlordId
   v
-Properties
+PR_Property
   |
-  ├── PropertyTypes
-  ├── PropertyImages
-  ├── Favourites
-  └── RentalRequests
+  ├── PR_PropertyTypes
+  ├── PR_PropertyImages
+  ├── FA_Favourites
+  └── RR_RentalRequests
 ```
 
 ### Used by
@@ -327,7 +343,7 @@ Properties
 
 # 10. PropertyImages
 
-## Table: `PropertyImages`
+## Table: `PR_PropertyImages`
 
 Stores property image metadata. Inherits `BaseClass`.
 
@@ -338,7 +354,7 @@ Actual image files may be stored in cloud/object storage later; the database sto
 | Column | Type | Notes |
 |---|---|---|
 | *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
-| PropertyId | uniqueidentifier | FK → Properties.Id |
+| PropertyId | uniqueidentifier | FK → PR_Property.Id |
 | ImageUrl | nvarchar(1000) | Required |
 | IsPrimary | bit | Required |
 | SortOrder | int | Required |
@@ -354,7 +370,7 @@ Actual image files may be stored in cloud/object storage later; the database sto
 
 # 11. Favourites
 
-## Table: `Favourites`
+## Table: `FA_Favourites`
 
 Stores properties saved by tenants. **Composite key — does not inherit `BaseClass`** (see §3.3).
 
@@ -362,8 +378,8 @@ Stores properties saved by tenants. **Composite key — does not inherit `BaseCl
 
 | Column | Type | Notes |
 |---|---|---|
-| UserId | uniqueidentifier | PK/FK → Users.Id |
-| PropertyId | uniqueidentifier | PK/FK → Properties.Id |
+| UserId | uniqueidentifier | PK/FK → US_Users.Id |
+| PropertyId | uniqueidentifier | PK/FK → PR_Property.Id |
 | CreatedAt | datetime2 | Required |
 
 Composite primary key:
@@ -375,9 +391,9 @@ Composite primary key:
 ### Relationship
 
 ```text
-Users
+US_Users
   |
-  └── Favourites ─── Properties
+  └── FA_Favourites ─── PR_Property
 ```
 
 ### Used by
@@ -391,7 +407,7 @@ Users
 
 # 12. RentalRequestStatuses
 
-## Table: `RentalRequestStatuses`
+## Table: `RR_RentalRequestStatuses`
 
 Lookup table for rental-request statuses. Inherits `BaseClass`.
 
@@ -417,7 +433,7 @@ Expired
 
 # 13. RentalRequests
 
-## Table: `RentalRequests`
+## Table: `RR_RentalRequests`
 
 Stores a tenant's request to rent a property. Inherits `BaseClass`.
 
@@ -426,9 +442,9 @@ Stores a tenant's request to rent a property. Inherits `BaseClass`.
 | Column | Type | Notes |
 |---|---|---|
 | *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
-| PropertyId | uniqueidentifier | FK → Properties.Id |
-| TenantId | uniqueidentifier | FK → Users.Id |
-| StatusId | uniqueidentifier | FK → RentalRequestStatuses.Id |
+| PropertyId | uniqueidentifier | FK → PR_Property.Id |
+| TenantId | uniqueidentifier | FK → US_Users.Id |
+| StatusId | uniqueidentifier | FK → RR_RentalRequestStatuses.Id |
 | Message | nvarchar(1000) | Nullable |
 | RequestedAt | datetime2 | Required |
 | DecisionAt | datetime2 | Nullable |
@@ -437,14 +453,14 @@ Stores a tenant's request to rent a property. Inherits `BaseClass`.
 ### Relationships
 
 ```text
-Users (Tenant)
+US_Users (Tenant)
       |
       v
-RentalRequests
+RR_RentalRequests
       |
-      +── Properties
+      +── PR_Property
       |
-      +── RentalRequestStatuses
+      +── RR_RentalRequestStatuses
 ```
 
 ### Used by
@@ -496,7 +512,7 @@ Many-to-many relationship. **Composite key — does not inherit `BaseClass`** (s
 
 | Column | Type | Notes |
 |---|---|---|
-| PropertyId | uniqueidentifier | PK/FK → Properties.Id |
+| PropertyId | uniqueidentifier | PK/FK → PR_Property.Id |
 | AmenityId | uniqueidentifier | PK/FK → Amenities.Id |
 | CreatedAt | datetime2 | Required |
 
@@ -525,7 +541,7 @@ For future push/in-app notifications. Inherits `BaseClass`.
 | Column | Type | Notes |
 |---|---|---|
 | *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
-| UserId | uniqueidentifier | FK → Users.Id |
+| UserId | uniqueidentifier | FK → US_Users.Id |
 | Title | nvarchar(200) | Required |
 | Message | nvarchar(1000) | Required |
 | Type | nvarchar(50) | Required |
@@ -554,7 +570,7 @@ If refresh-token authentication is implemented. Inherits `BaseClass`.
 | Column | Type | Notes |
 |---|---|---|
 | *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
-| UserId | uniqueidentifier | FK → Users.Id |
+| UserId | uniqueidentifier | FK → US_Users.Id |
 | TokenHash | nvarchar(500) | Required |
 | ExpiresAt | datetime2 | Required |
 | RevokedAt | datetime2 | Nullable |
@@ -586,44 +602,44 @@ For administrative/audit requirements. Inherits `BaseClass` (audit-of-audit — 
 # 19. Table Relationship Overview
 
 ```text
-                         ┌──────────────┐
-                         │    Roles     │
-                         └──────┬───────┘
-                                │
-                                │
-                         ┌──────▼───────┐
-                         │  UserRoles   │
-                         └──────┬───────┘
-                                │
-                         ┌──────▼───────┐
-                         │    Users     │
-                         └───┬────┬─────┘
-                             │    │
-                  Landlord   │    │ Tenant
-                             │    │
-                       ┌─────▼────▼─────┐
-                       │   Properties   │
-                       └──┬────┬────┬───┘
-                          │    │    │
-              ┌───────────┘    │    └────────────┐
-              │                │                 │
-       ┌──────▼──────┐  ┌─────▼──────┐   ┌──────▼───────┐
-       │PropertyTypes│  │PropertyImages│  │  Favourites  │
-       └─────────────┘  └─────────────┘   └──────────────┘
-                                                │
-                                                │
-                                      ┌─────────▼─────────┐
-                                      │       Users       │
-                                      └───────────────────┘
+                           ┌──────────────┐
+                           │   US_Roles   │
+                           └──────┬───────┘
+                                  │
+                                  │
+                           ┌──────▼───────┐
+                           │ US_UserRoles │
+                           └──────┬───────┘
+                                  │
+                           ┌──────▼───────┐
+                           │  US_Users    │
+                           └───┬────┬─────┘
+                               │    │
+                    Landlord   │    │ Tenant
+                               │    │
+                         ┌─────▼────▼─────┐
+                         │   PR_Property  │
+                         └──┬────┬────┬───┘
+                            │    │    │
+                ┌───────────┘    │    └────────────┐
+                │                │                 │
+       ┌────────▼───────┐  ┌────▼──────────┐  ┌───▼────────────┐
+       │PR_PropertyTypes│  │PR_PropertyImages│ │  FA_Favourites  │
+       └────────────────┘  └────────────────┘  └───┬────────────┘
+                                                    │
+                                                    │
+                                         ┌──────────▼──────────┐
+                                         │      US_Users       │
+                                         └─────────────────────┘
 
-Users ────────────────┐
-                      │
-                      ▼
-               RentalRequests
-                      │
-          ┌───────────┴───────────┐
-          ▼                       ▼
-     Properties          RentalRequestStatuses
+US_Users ────────────────┐
+                         │
+                         ▼
+                RR_RentalRequests
+                         │
+             ┌───────────┴───────────┐
+             ▼                       ▼
+        PR_Property       RR_RentalRequestStatuses
 ```
 
 ---
@@ -632,30 +648,30 @@ Users ────────────────┐
 
 | Feature | Tables |
 |---|---|
-| Register | Users, Roles, UserRoles |
-| Login | Users, Roles, UserRoles |
-| Profile | Users |
-| Change password | Users |
-| Browse properties | Properties, PropertyTypes, PropertyImages |
-| Search | Properties, PropertyTypes |
-| Filter | Properties, PropertyTypes |
-| Property details | Properties, PropertyTypes, PropertyImages, Users |
-| Add favourite | Favourites, Users, Properties |
-| Remove favourite | Favourites |
-| Favourite list | Favourites, Properties, PropertyImages |
-| Add property | Properties, PropertyTypes |
-| Edit property | Properties, PropertyTypes |
-| Property images | PropertyImages, Properties |
-| Submit rental request | RentalRequests, Properties, Users, RentalRequestStatuses |
-| Tenant request list | RentalRequests, Properties |
-| Landlord request list | RentalRequests, Properties, Users |
-| Approve request | RentalRequests, Properties |
-| Reject request | RentalRequests |
-| Cancel request | RentalRequests |
+| Register | US_Users, US_Roles, US_UserRoles |
+| Login | US_Users, US_Roles, US_UserRoles |
+| Profile | US_Users |
+| Change password | US_Users |
+| Browse properties | PR_Property, PR_PropertyTypes, PR_PropertyImages |
+| Search | PR_Property, PR_PropertyTypes |
+| Filter | PR_Property, PR_PropertyTypes |
+| Property details | PR_Property, PR_PropertyTypes, PR_PropertyImages, US_Users |
+| Add favourite | FA_Favourites, US_Users, PR_Property |
+| Remove favourite | FA_Favourites |
+| Favourite list | FA_Favourites, PR_Property, PR_PropertyImages |
+| Add property | PR_Property, PR_PropertyTypes |
+| Edit property | PR_Property, PR_PropertyTypes |
+| Property images | PR_PropertyImages, PR_Property |
+| Submit rental request | RR_RentalRequests, PR_Property, US_Users, RR_RentalRequestStatuses |
+| Tenant request list | RR_RentalRequests, PR_Property |
+| Landlord request list | RR_RentalRequests, PR_Property, US_Users |
+| Approve request | RR_RentalRequests, PR_Property |
+| Reject request | RR_RentalRequests |
+| Cancel request | RR_RentalRequests |
 | Amenities | Amenities, PropertyAmenitiesMap |
-| Notifications | Notifications, Users |
-| Refresh token | RefreshTokens, Users |
-| Audit | AuditLogs, Users |
+| Notifications | Notifications, US_Users |
+| Refresh token | RefreshTokens, US_Users |
+| Audit | AuditLogs, US_Users |
 
 ---
 
@@ -667,11 +683,11 @@ This section is specifically intended for AI agents.
 
 | Function | Primary tables | Related tables |
 |---|---|---|
-| Register | Users | Roles, UserRoles |
-| Login | Users | Roles, UserRoles |
-| Get current user | Users | Roles, UserRoles |
-| Update profile | Users | — |
-| Change password | Users | — |
+| Register | US_Users | US_Roles, US_UserRoles |
+| Login | US_Users | US_Roles, US_UserRoles |
+| Get current user | US_Users | US_Roles, US_UserRoles |
+| Update profile | US_Users | — |
+| Change password | US_Users | — |
 
 ---
 
@@ -679,16 +695,16 @@ This section is specifically intended for AI agents.
 
 | Function | Primary tables | Related tables |
 |---|---|---|
-| Get recommended properties | Properties | PropertyTypes, PropertyImages |
-| Search properties | Properties | PropertyTypes |
-| Filter properties | Properties | PropertyTypes |
-| Get property details | Properties | PropertyTypes, PropertyImages, Users |
-| Create property | Properties | PropertyTypes |
-| Update property | Properties | PropertyTypes |
-| Deactivate property | Properties | — (sets `IsActive = 0`) |
-| Delete property | Properties | — (sets `IsDeleted = 1` via `BaseClass`) |
-| Add property image | PropertyImages | Properties |
-| Remove property image | PropertyImages | Properties (sets `IsDeleted = 1` via `BaseClass`) |
+| Get recommended properties | PR_Property | PR_PropertyTypes, PR_PropertyImages |
+| Search properties | PR_Property | PR_PropertyTypes |
+| Filter properties | PR_Property | PR_PropertyTypes |
+| Get property details | PR_Property | PR_PropertyTypes, PR_PropertyImages, US_Users |
+| Create property | PR_Property | PR_PropertyTypes |
+| Update property | PR_Property | PR_PropertyTypes |
+| Deactivate property | PR_Property | — (sets `IsActive = 0`) |
+| Delete property | PR_Property | — (sets `IsDeleted = 1` via `BaseClass`) |
+| Add property image | PR_PropertyImages | PR_Property |
+| Remove property image | PR_PropertyImages | PR_Property (sets `IsDeleted = 1` via `BaseClass`) |
 
 ---
 
@@ -696,10 +712,10 @@ This section is specifically intended for AI agents.
 
 | Function | Primary tables | Related tables |
 |---|---|---|
-| Get favourites | Favourites | Properties, PropertyImages |
-| Add favourite | Favourites | Users, Properties |
-| Remove favourite | Favourites | Users, Properties (hard delete — see §3.3) |
-| Check favourite | Favourites | Users, Properties |
+| Get favourites | FA_Favourites | PR_Property, PR_PropertyImages |
+| Add favourite | FA_Favourites | US_Users, PR_Property |
+| Remove favourite | FA_Favourites | US_Users, PR_Property (hard delete — see §3.3) |
+| Check favourite | FA_Favourites | US_Users, PR_Property |
 
 ---
 
@@ -707,13 +723,13 @@ This section is specifically intended for AI agents.
 
 | Function | Primary tables | Related tables |
 |---|---|---|
-| Create rental request | RentalRequests | Users, Properties, RentalRequestStatuses |
-| Get tenant requests | RentalRequests | Properties, RentalRequestStatuses |
-| Get request details | RentalRequests | Users, Properties, RentalRequestStatuses |
-| Cancel request | RentalRequests | RentalRequestStatuses |
-| Get landlord requests | RentalRequests | Users, Properties, RentalRequestStatuses |
-| Approve request | RentalRequests | Properties, RentalRequestStatuses |
-| Reject request | RentalRequests | RentalRequestStatuses |
+| Create rental request | RR_RentalRequests | US_Users, PR_Property, RR_RentalRequestStatuses |
+| Get tenant requests | RR_RentalRequests | PR_Property, RR_RentalRequestStatuses |
+| Get request details | RR_RentalRequests | US_Users, PR_Property, RR_RentalRequestStatuses |
+| Cancel request | RR_RentalRequests | RR_RentalRequestStatuses |
+| Get landlord requests | RR_RentalRequests | US_Users, PR_Property, RR_RentalRequestStatuses |
+| Approve request | RR_RentalRequests | PR_Property, RR_RentalRequestStatuses |
+| Reject request | RR_RentalRequests | RR_RentalRequestStatuses |
 
 ---
 
@@ -724,7 +740,7 @@ This section is specifically intended for AI agents.
 A landlord can only modify/deactivate properties where:
 
 ```text
-Properties.LandlordId == authenticatedUserId
+PR_Property.LandlordId == authenticatedUserId
 ```
 
 The API must enforce this.
@@ -784,7 +800,7 @@ The API must validate state transitions.
 
 - No API endpoint issues a physical `DELETE` against a `BaseClass`-derived table. "Delete" always means setting `IsDeleted = 1` (plus `SysUserModified` / `SysDateModified`).
 - All read queries (`GetAll`, `GetById`, search, filters) must exclude `IsDeleted = 1` rows — enforce this via an EF Core global query filter per `DbContext`, not per-query `Where` clauses, so it can't be forgotten.
-- Composite-key junction tables (`UserRoles`, `Favourites`, `PropertyAmenitiesMap`) are the exception — unlinking is a physical delete (see §3.3).
+- Composite-key junction tables (`US_UserRoles`, `FA_Favourites`, `PropertyAmenitiesMap`) are the exception — unlinking is a physical delete (see §3.3).
 
 ---
 
@@ -792,10 +808,10 @@ The API must validate state transitions.
 
 Potential indexes:
 
-### Users
+### US_Users
 
 ```text
-UX_Users_Email
+UX_US_Users_Email
 ```
 
 Unique index on:
@@ -804,7 +820,7 @@ Unique index on:
 Email
 ```
 
-### Properties
+### PR_Property
 
 Indexes on:
 
@@ -819,7 +835,7 @@ IsActive
 IsDeleted
 ```
 
-### Favourites
+### FA_Favourites
 
 Composite PK/index:
 
@@ -827,7 +843,7 @@ Composite PK/index:
 UserId + PropertyId
 ```
 
-### RentalRequests
+### RR_RentalRequests
 
 Indexes on:
 
@@ -838,7 +854,7 @@ StatusId
 RequestedAt
 ```
 
-### PropertyImages
+### PR_PropertyImages
 
 Index on:
 
@@ -920,6 +936,7 @@ Before changing database-related code:
 13. New entities with a single surrogate key must inherit `BaseClass` — do not redeclare `SysUserCreated`/`SysDateCreated`/`IsDeleted` manually.
 14. Never issue a physical `DELETE` against a `BaseClass`-derived table — always soft-delete via `IsDeleted`.
 15. All table/column names use PascalCase.
+16. Follow the domain-prefix naming convention: `US_` for User, `PR_` for Property, `FA_` for Favourite, `RR_` for Rental Request.
 
 ---
 
@@ -930,6 +947,7 @@ Current status:
 ```text
 Schema: PLANNED
 Database: MSSQL
+Database name: SewaRent
 ORM: EF Core
 Backend: Not yet implemented
 Mobile integration: Not yet implemented

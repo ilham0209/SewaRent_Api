@@ -1,90 +1,62 @@
 using SewaRent_Api.Shared.Models;
 using Microsoft.EntityFrameworkCore;
-using System.Linq.Expressions;
-using System.Reflection;
 
-namespace SewaRent_Api.Shared.Extensions
+namespace SewaRent_Api.Shared.Extensions;
+
+public static class QueryableExtensions
 {
-    public static class QueryableExtensions
+    public static IQueryable<T> ApplySearch<T>(this IQueryable<T> query, string? search, params string[] searchProperties)
     {
-        public static IQueryable<T> ApplySearch<T>(this IQueryable<T> query, string? searchTerm, params string[] searchProperties)
-        {
-            if (string.IsNullOrWhiteSpace(searchTerm) || !searchProperties.Any())
-                return query;
-
-            var parameter = Expression.Parameter(typeof(T), "x");
-            Expression? combinedExpression = null;
-
-            foreach (var property in searchProperties)
-            {
-                var propertyAccess = Expression.Property(parameter, property);
-                var toLowerMethod = typeof(string).GetMethod("ToLower", Type.EmptyTypes);
-                var containsMethod = typeof(string).GetMethod("Contains", new[] { typeof(string) });
-
-                if (toLowerMethod != null && containsMethod != null)
-                {
-                    var propertyToLower = Expression.Call(propertyAccess, toLowerMethod);
-                    var searchTermLower = Expression.Constant(searchTerm.ToLower());
-                    var containsExpression = Expression.Call(propertyToLower, containsMethod, searchTermLower);
-
-                    combinedExpression = combinedExpression == null
-                        ? containsExpression
-                        : Expression.OrElse(combinedExpression, containsExpression);
-                }
-            }
-
-            if (combinedExpression != null)
-            {
-                var lambda = Expression.Lambda<Func<T, bool>>(combinedExpression, parameter);
-                query = query.Where(lambda);
-            }
-
+        if (string.IsNullOrWhiteSpace(search) || searchProperties.Length == 0)
             return query;
-        }
 
-        public static IQueryable<T> ApplySort<T>(this IQueryable<T> query, string? sortBy, bool sortDescending)
+        var searchLower = search.ToLower();
+        var paramName = "x";
+        var parameter = System.Linq.Expressions.Expression.Parameter(typeof(T), paramName);
+
+        System.Linq.Expressions.Expression? combined = null;
+        foreach (var prop in searchProperties)
         {
-            if (string.IsNullOrWhiteSpace(sortBy))
-                return query;
-
-            var parameter = Expression.Parameter(typeof(T), "x");
-            var property = Expression.Property(parameter, sortBy);
-            var lambda = Expression.Lambda(property, parameter);
-
-            var methodName = sortDescending ? "OrderByDescending" : "OrderBy";
-            var resultExpression = Expression.Call(
-                typeof(Queryable),
-                methodName,
-                new Type[] { typeof(T), property.Type },
-                query.Expression,
-                Expression.Quote(lambda)
-            );
-
-            return query.Provider.CreateQuery<T>(resultExpression);
+            var propertyAccess = System.Linq.Expressions.Expression.Property(parameter, prop);
+            var nullCheck = System.Linq.Expressions.Expression.NotEqual(
+                propertyAccess, System.Linq.Expressions.Expression.Constant(null, typeof(string)));
+            var toLower = System.Linq.Expressions.Expression.Call(
+                propertyAccess, typeof(string).GetMethod("ToLower", Type.EmptyTypes)!);
+            var contains = System.Linq.Expressions.Expression.Call(
+                toLower, typeof(string).GetMethod("Contains", [typeof(string)])!,
+                System.Linq.Expressions.Expression.Constant(searchLower));
+            var expr = System.Linq.Expressions.Expression.AndAlso(nullCheck, contains);
+            combined = combined is null ? expr : System.Linq.Expressions.Expression.OrElse(combined, expr);
         }
 
-        public static async Task<DataGridResponse<T>> ToDataGridResponseAsync<T>(
-            this IQueryable<T> query,
-            DataGridRequest request)
+        if (combined is not null)
         {
-            var totalRecords = await query.CountAsync();
-            var totalPages = (int)Math.Ceiling((double)totalRecords / request.PageSize);
-
-            var data = await query
-                .Skip((request.Page - 1) * request.PageSize)
-                .Take(request.PageSize)
-                .ToListAsync();
-
-            return new DataGridResponse<T>
-            {
-                Data = data,
-                TotalRecords = totalRecords,
-                TotalPages = totalPages,
-                CurrentPage = request.Page,
-                PageSize = request.PageSize,
-                HasNextPage = request.Page < totalPages,
-                HasPreviousPage = request.Page > 1
-            };
+            var lambda = System.Linq.Expressions.Expression.Lambda<Func<T, bool>>(combined, parameter);
+            query = query.Where(lambda);
         }
+
+        return query;
+    }
+
+    public static IQueryable<T> ApplyPaging<T>(this IQueryable<T> query, int page, int pageSize)
+    {
+        return query.Skip((page - 1) * pageSize).Take(pageSize);
+    }
+
+    public static async Task<DataGridResponse<T>> ToDataGridResponseAsync<T>(
+        this IQueryable<T> source,
+        int page,
+        int pageSize,
+        CancellationToken ct = default)
+    {
+        var totalCount = await source.CountAsync(ct);
+        var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+
+        var items = await source
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(ct);
+
+        return new DataGridResponse<T>(items, totalCount, totalPages, page, pageSize);
     }
 }
