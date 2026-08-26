@@ -197,6 +197,7 @@ SewaRent_Api/
 │   │   │   └── ProfileController.cs
 │   │   ├── Property/
 │   │   │   ├── PropertyController.cs
+│   │   │   ├── PropertyTypeController.cs
 │   │   │   └── PropertyImageController.cs
 │   │   ├── Favourite/
 │   │   │   └── FavouriteController.cs
@@ -221,7 +222,9 @@ SewaRent_Api/
 │   │   │   ├── GetAllProperty.cs
 │   │   │   ├── GetByIdProperty.cs
 │   │   │   ├── UploadPropertyImage.cs
-│   │   │   └── DeletePropertyImage.cs
+│   │   │   ├── DeletePropertyImage.cs
+│   │   │   ├── GetAllPropertyType.cs
+│   │   │   └── CreatePropertyType.cs
 │   │   ├── Favourite/
 │   │   │   ├── AddFavourite.cs
 │   │   │   ├── RemoveFavourite.cs

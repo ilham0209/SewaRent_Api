@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
+using SewaRent_Api.Shared.Domain.Property;
+using SewaRent_Api.Shared.Domain.RentalRequest;
 using SewaRent_Api.Shared.Domain.User;
 using SewaRent_Api.Shared.Infrastructure.Behavior;
 using SewaRent_Api.Shared.Infrastructure.Persistence;
@@ -79,6 +81,8 @@ app.MapControllers();
 
 ApplyMigration();
 SeedRoles();
+SeedPropertyTypes();
+SeedRentalRequestStatuses();
 
 app.Run();
 
@@ -104,6 +108,46 @@ void SeedRoles()
         };
 
         db.Roles.AddRange(roles);
+        db.SaveChanges();
+    }
+}
+
+void SeedPropertyTypes()
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<SewaRentDbContext>();
+
+    if (!db.PropertyTypes.Any())
+    {
+        var propertyTypes = new[]
+        {
+            new PropertyTypeEntity { Name = "Apartment", Description = "Unit in a multi-storey building", IsActive = true, SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
+            new PropertyTypeEntity { Name = "Condo", Description = "Condominium with shared facilities", IsActive = true, SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
+            new PropertyTypeEntity { Name = "Landed", Description = "Landed house or bungalow", IsActive = true, SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
+            new PropertyTypeEntity { Name = "Room", Description = "Single room for rent", IsActive = true, SysUserCreated = "System", SysDateCreated = DateTime.UtcNow }
+        };
+
+        db.PropertyTypes.AddRange(propertyTypes);
+        db.SaveChanges();
+    }
+}
+
+void SeedRentalRequestStatuses()
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<SewaRentDbContext>();
+
+    if (!db.RentalRequestStatuses.Any())
+    {
+        var statuses = new[]
+        {
+            new RentalRequestStatusEntity { Name = "Pending", Description = "Request is awaiting landlord action", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
+            new RentalRequestStatusEntity { Name = "Approved", Description = "Landlord has approved the request", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
+            new RentalRequestStatusEntity { Name = "Rejected", Description = "Landlord has rejected the request", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
+            new RentalRequestStatusEntity { Name = "Cancelled", Description = "Tenant has cancelled the request", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow }
+        };
+
+        db.RentalRequestStatuses.AddRange(statuses);
         db.SaveChanges();
     }
 }

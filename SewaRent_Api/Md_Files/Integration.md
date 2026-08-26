@@ -263,6 +263,35 @@ The final implementation may use a dedicated status endpoint instead of DELETE i
 
 ---
 
+## 8. PropertyType Integration
+
+### Get property types
+
+```text
+GET /api/property-types
+```
+
+Returns all active property types (Apartment, Condo, Landed, Room, etc.).
+
+### Create property type
+
+Admin only:
+
+```text
+POST /api/property-types
+```
+
+Request body:
+
+```json
+{
+  "name": "Studio",
+  "description": "Self-contained single room unit"
+}
+```
+
+---
+
 ## 8. Property Image Integration
 
 ### Upload image
