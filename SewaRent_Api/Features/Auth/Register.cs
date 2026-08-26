@@ -10,12 +10,14 @@ namespace SewaRent_Api.Features.Auth;
 
 public static class Register
 {
-    public record Command(
-        string FullName,
-        string Email,
-        string Password,
-        string? PhoneNumber,
-        string Role) : IRequest<Response>;
+    public class Command : IRequest<Response>
+    {
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string? PhoneNumber { get; set; }
+        public string Role { get; set; } = string.Empty;
+    }
 
     public record Response(Guid Id, string FullName, string Email, string Role);
 

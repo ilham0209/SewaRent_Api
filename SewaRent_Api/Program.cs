@@ -13,8 +13,17 @@ using SewaRent_Api.Shared.Middleware;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddOpenApi();
-builder.Services.AddHttpContextAccessor();
+
+builder.Services.AddOpenApi(options =>
+{
+    options.CreateSchemaReferenceId = jsonType =>
+    {
+        var type = jsonType.Type;
+        return type.DeclaringType != null
+            ? $"{type.DeclaringType.Name}{type.Name}"
+            : Microsoft.AspNetCore.OpenApi.OpenApiOptions.CreateDefaultSchemaReferenceId(jsonType);
+    };
+}); builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddDbContext<SewaRentDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SewaRent")));

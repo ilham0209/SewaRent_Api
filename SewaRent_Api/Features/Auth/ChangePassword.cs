@@ -9,7 +9,11 @@ namespace SewaRent_Api.Features.Auth;
 
 public static class ChangePassword
 {
-    public record Command(string CurrentPassword, string NewPassword) : IRequest<Response>;
+    public class Command : IRequest<Response>
+    {
+        public string CurrentPassword { get; set; } = string.Empty;
+        public string NewPassword { get; set; } = string.Empty;
+    }
 
     public record Response(bool Success);
 

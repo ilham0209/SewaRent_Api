@@ -8,7 +8,11 @@ namespace SewaRent_Api.Features.Auth;
 
 public static class Login
 {
-    public record Command(string Email, string Password) : IRequest<Response>;
+    public class Command : IRequest<Response>
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
 
     public record Response(string AccessToken, DateTime ExpiresAt, UserDto User);
 
