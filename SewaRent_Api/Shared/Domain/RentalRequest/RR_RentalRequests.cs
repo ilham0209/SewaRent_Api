@@ -12,9 +12,3 @@ public class RentalRequestEntity : BaseClass
     public DateTime? DecisionAt { get; set; }
     public string? DecisionNote { get; set; }
 }
-
-public class RentalRequestStatusEntity : BaseClass
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-}

@@ -16,16 +16,7 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 builder.Services.AddHttpContextAccessor();
 
-builder.Services.AddDbContext<UserDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("SewaRent")));
-
-builder.Services.AddDbContext<PropertyDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("SewaRent")));
-
-builder.Services.AddDbContext<FavouriteDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("SewaRent")));
-
-builder.Services.AddDbContext<RentalRequestDbContext>(options =>
+builder.Services.AddDbContext<SewaRentDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("SewaRent")));
 
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblyContaining<Program>());
@@ -85,24 +76,14 @@ app.Run();
 void ApplyMigration()
 {
     using var scope = app.Services.CreateScope();
-    var services = scope.ServiceProvider;
-
-    var contexts = new DbContext[]
-    {
-        services.GetRequiredService<UserDbContext>(),
-        services.GetRequiredService<PropertyDbContext>(),
-        services.GetRequiredService<FavouriteDbContext>(),
-        services.GetRequiredService<RentalRequestDbContext>()
-    };
-
-    foreach (var context in contexts)
-        context.Database.Migrate();
+    var db = scope.ServiceProvider.GetRequiredService<SewaRentDbContext>();
+    db.Database.Migrate();
 }
 
 void SeedRoles()
 {
     using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<UserDbContext>();
+    var db = scope.ServiceProvider.GetRequiredService<SewaRentDbContext>();
 
     if (!db.Roles.Any())
     {

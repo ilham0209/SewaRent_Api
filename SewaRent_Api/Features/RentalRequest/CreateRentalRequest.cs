@@ -22,7 +22,7 @@ public static class CreateRentalRequest
         }
     }
 
-    public class Handler(RentalRequestDbContext rentalDb, PropertyDbContext propertyDb,
+    public class Handler(SewaRentDbContext db,
         IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command, Response>
     {
@@ -31,7 +31,7 @@ public static class CreateRentalRequest
             var tenantId = Guid.Parse(httpContextAccessor.HttpContext!.User
                 .FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var property = await propertyDb.Properties
+            var property = await db.Properties
                 .FirstOrDefaultAsync(p => p.Id == request.PropertyId && !p.IsDeleted, ct)
                 ?? throw new InvalidOperationException("Property not found.");
 
@@ -41,11 +41,11 @@ public static class CreateRentalRequest
             if (property.AvailabilityStatus != "Available")
                 throw new InvalidOperationException("Property is not available for rent.");
 
-            var pendingStatus = await rentalDb.RentalRequestStatuses
+            var pendingStatus = await db.RentalRequestStatuses
                 .FirstOrDefaultAsync(s => s.Name == "Pending", ct)
                 ?? throw new InvalidOperationException("Rental request status not configured.");
 
-            var hasPendingRequest = await rentalDb.RentalRequests
+            var hasPendingRequest = await db.RentalRequests
                 .AnyAsync(r => r.TenantId == tenantId
                     && r.PropertyId == request.PropertyId
                     && r.StatusId == pendingStatus.Id
@@ -66,8 +66,8 @@ public static class CreateRentalRequest
                 SysDateCreated = DateTime.UtcNow
             };
 
-            rentalDb.RentalRequests.Add(rentalRequest);
-            await rentalDb.SaveChangesAsync(ct);
+            db.RentalRequests.Add(rentalRequest);
+            await db.SaveChangesAsync(ct);
 
             return new Response(rentalRequest.Id, rentalRequest.PropertyId,
                 rentalRequest.StatusId, rentalRequest.RequestedAt);

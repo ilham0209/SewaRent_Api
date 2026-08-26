@@ -22,7 +22,7 @@ public static class ChangePassword
         }
     }
 
-    public class Handler(UserDbContext db, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command, Response>
     {
         public async Task<Response> Handle(Command request, CancellationToken ct)

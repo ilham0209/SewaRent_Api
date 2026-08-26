@@ -31,7 +31,7 @@ public static class Register
         }
     }
 
-    public class Handler(UserDbContext db)
+    public class Handler(SewaRentDbContext db)
         : IRequestHandler<Command, Response>
     {
         public async Task<Response> Handle(Command request, CancellationToken ct)

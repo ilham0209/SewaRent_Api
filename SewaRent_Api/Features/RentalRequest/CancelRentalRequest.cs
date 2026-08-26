@@ -9,7 +9,7 @@ public static class CancelRentalRequest
 {
     public record Command(Guid Id) : IRequest;
 
-    public class Handler(RentalRequestDbContext db, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command>
     {
         public async Task Handle(Command request, CancellationToken ct)

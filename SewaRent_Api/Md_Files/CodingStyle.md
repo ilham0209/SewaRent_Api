@@ -4,7 +4,7 @@
 >
 > The goal is to keep the C#/.NET code consistent, readable, maintainable, and easy for both developers and AI coding agents to understand.
 >
-> This document follows the `imas-dotnet-architecture` convention: vertical slice per feature, thin controllers, MediatR request pipeline, FluentValidation, EF Core code-first, and per-domain `DbContext`s (`UserDbContext`, `PropertyDbContext`, `FavouriteDbContext`, `RentalRequestDbContext`) sharing the single `SewaRent` database.
+> This document follows the `imas-dotnet-architecture` convention: vertical slice per feature, thin controllers, MediatR request pipeline, FluentValidation, EF Core code-first, and a single `SewaRentDbContext` sharing the `SewaRent` database.
 
 ---
 
@@ -54,9 +54,8 @@ Correct:
 ```text
 PropertyController.cs
 CreateProperty.cs
-PropertyEntities.cs
-UserDbContext.cs
-PropertyDbContext.cs
+PR_Property.cs
+SewaRentDbContext.cs
 GetByIdRentalRequest.cs
 ```
 
@@ -82,8 +81,8 @@ The filename must match the primary artifact it represents — a feature file is
 | Validator class | `{Verb}{Domain}Validator` | `CreatePropertyValidator` |
 | Response DTO | `{Verb}{Domain}Response` | `CreatePropertyResponse` |
 | Entity | `{Domain}Entity` | `PropertyEntity` |
-| Entity file | `{Domain}Entities.cs` | `PropertyEntities.cs` |
-| DbContext | `{Domain}DbContext` | `PropertyDbContext` |
+| Entity file | `{TableName}.cs` | `PR_Property.cs` |
+| DbContext | `SewaRentDbContext` | `SewaRentDbContext` |
 | Controller | `{Domain}Controller` | `PropertyController` |
 | Test class | `{Verb}{Domain}Tests` | `CreatePropertyTests` |
 
@@ -482,7 +481,7 @@ Do not scatter one domain's files across unrelated folders. Do not create every 
 Every entity with a single surrogate key inherits `BaseClass` (`Shared/Domain/BaseClass.cs`) instead of redeclaring audit/soft-delete columns.
 
 ```csharp
-// Shared/Domain/Property/PropertyEntities.cs
+// Shared/Domain/Property/PR_Property.cs
 namespace SewaRent_Api.Shared.Domain.Property;
 
 public class PropertyEntity : BaseClass
@@ -502,16 +501,7 @@ Composite-key junction tables (e.g. `Favourites`, `UserRoles`) do **not** inheri
 
 # 15. DbContext & Migrations
 
-Each domain has its own `DbContext`, but all point to the **single** database named `SewaRent`. Migrations go into one shared folder.
-
-**Four DbContexts per domain:**
-
-| DbContext | Tables | Namespace |
-|---|---|---|
-| `UserDbContext` | `US_Users`, `US_Roles`, `US_UserRoles` | `Shared.Infrastructure.Persistence` |
-| `PropertyDbContext` | `PR_Property`, `PR_PropertyTypes`, `PR_PropertyImages` | `Shared.Infrastructure.Persistence` |
-| `FavouriteDbContext` | `FA_Favourites` | `Shared.Infrastructure.Persistence` |
-| `RentalRequestDbContext` | `RR_RentalRequests`, `RR_RentalRequestStatuses` | `Shared.Infrastructure.Persistence` |
+A single `SewaRentDbContext` manages all domain entities and points to the **single** database named `SewaRent`. Migrations go into one shared folder.
 
 **Table naming convention:** Every table is prefixed with its domain code via `ToTable()` in `OnModelCreating`:
 
@@ -522,16 +512,16 @@ Each domain has its own `DbContext`, but all point to the **single** database na
 | Favourites | `FA_` | `FA_Favourites` |
 | Rental Request | `RR_` | `RR_RentalRequests`, `RR_RentalRequestStatuses` |
 
-Each DbContext only declares entities for its own domain. The same `SewaRent` connection string is registered in `Program.cs` for all four contexts.
+The same `SewaRent` connection string is registered in `Program.cs` for the single context.
 
 ```csharp
-// Shared/Infrastructure/Persistence/PropertyDbContext.cs
+// Shared/Infrastructure/Persistence/SewaRentDbContext.cs
 using Microsoft.EntityFrameworkCore;
 using SewaRent_Api.Shared.Domain.Property;
 
 namespace SewaRent_Api.Shared.Infrastructure.Persistence;
 
-public class PropertyDbContext(DbContextOptions<PropertyDbContext> options) : DbContext(options)
+public class SewaRentDbContext(DbContextOptions<SewaRentDbContext> options) : DbContext(options)
 {
     public DbSet<PropertyEntity> Properties => Set<PropertyEntity>();
     public DbSet<PropertyTypeEntity> PropertyTypes => Set<PropertyTypeEntity>();
@@ -566,13 +556,10 @@ public class PropertyDbContext(DbContextOptions<PropertyDbContext> options) : Db
 
 Add a global query filter (`HasQueryFilter(x => !x.IsDeleted)`) on every `BaseClass`-derived entity so soft-deleted rows are excluded automatically — do not rely on per-query `Where(x => !x.IsDeleted)` calls.
 
-Create migrations against a specific context:
+Create migrations against the single context:
 
 ```text
-Add-Migration -Name {Name} -Context PropertyDbContext
-Add-Migration -Name {Name} -Context UserDbContext
-Add-Migration -Name {Name} -Context FavouriteDbContext
-Add-Migration -Name {Name} -Context RentalRequestDbContext
+Add-Migration -Name {Name} -Context SewaRentDbContext
 ```
 
 Migration files land in `Shared/Infrastructure/Migrations/`.
@@ -719,13 +706,6 @@ Avoid dumping entire request/response payloads or sensitive data. Never log cred
 
 # 25. Testing
 
-Tests mirror the production folder structure exactly inside `SewaRent_Api.Tests/`.
-
-```text
-Features/Property/CreateProperty.cs        → Features/Property/CreatePropertyTests.cs
-Controllers/Property/PropertyController.cs → Controllers/Property/PropertyControllerTests.cs
-```
-
 Test:
 
 - Business logic and business-rule enforcement (e.g. landlord ownership, rental-request state transitions)
@@ -734,31 +714,9 @@ Test:
 - Error handling
 - Critical controller HTTP behavior (status codes, routing)
 
-Not every feature needs a controller test — focus controller tests on HTTP concerns; feature/handler tests cover business logic. Use EF Core InMemory or a test DbContext fixture, never the production database.
+Use EF Core InMemory or a test DbContext fixture, never the production database.
 
 Do not write tests simply to increase test count.
-
-```csharp
-// Features/Property/CreatePropertyTests.cs
-public class CreatePropertyTests
-{
-    [Fact]
-    public async Task Handle_ValidCommand_ReturnsMappedResponse()
-    {
-        // Arrange
-        var db = TestDbFactory.CreateSewaRentDb();
-        var handler = new CreatePropertyHandler(db);
-        var command = new CreatePropertyCommand(Guid.NewGuid(), "Nice Condo", null, 1500m, Guid.NewGuid());
-
-        // Act
-        var result = await handler.Handle(command, CancellationToken.None);
-
-        // Assert
-        Assert.Equal("Nice Condo", result.Title);
-        Assert.Single(db.Properties);
-    }
-}
-```
 
 ---
 
@@ -812,7 +770,7 @@ AI agents working on the SewaRent API must follow these rules:
 5. Follow the vertical-slice pattern: Command/Query + Validator + Response + Handler in one feature file.
 6. Keep controllers thin — dispatch only, no business logic.
 7. Entities must inherit `BaseClass` unless they are a composite-key junction table (see `DATABASE.md` §3.3).
-8. Each domain has its own DbContext (`UserDbContext`, `PropertyDbContext`, `FavouriteDbContext`, `RentalRequestDbContext`), all sharing a single database (`SewaRent`). Tables are prefixed with domain code via `ToTable()`.
+8. All domains share a single `SewaRentDbContext`, which maps all entities to a single database (`SewaRent`). Tables are prefixed with domain code via `ToTable()`.
 9. Never issue a physical `DELETE` against a `BaseClass`-derived table — always soft-delete via `IsDeleted`.
 10. Never invent API endpoints not documented in `INTEGRATION.md`.
 11. Never invent database columns or tables not documented in `DATABASE.md`.

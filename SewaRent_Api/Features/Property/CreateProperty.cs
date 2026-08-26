@@ -40,7 +40,7 @@ public static class CreateProperty
         }
     }
 
-    public class Handler(PropertyDbContext db, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command, Response>
     {
         public async Task<Response> Handle(Command request, CancellationToken ct)

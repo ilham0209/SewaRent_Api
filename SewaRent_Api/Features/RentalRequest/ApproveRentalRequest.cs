@@ -9,7 +9,7 @@ public static class ApproveRentalRequest
 {
     public record Command(Guid Id, string? DecisionNote) : IRequest;
 
-    public class Handler(RentalRequestDbContext rentalDb, PropertyDbContext propertyDb,
+    public class Handler(SewaRentDbContext db,
         IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Command>
     {
@@ -18,25 +18,25 @@ public static class ApproveRentalRequest
             var landlordId = Guid.Parse(httpContextAccessor.HttpContext!.User
                 .FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var rentalRequest = await rentalDb.RentalRequests
+            var rentalRequest = await db.RentalRequests
                 .FirstOrDefaultAsync(r => r.Id == request.Id && !r.IsDeleted, ct)
                 ?? throw new InvalidOperationException("Rental request not found.");
 
-            var property = await propertyDb.Properties
+            var property = await db.Properties
                 .FirstOrDefaultAsync(p => p.Id == rentalRequest.PropertyId, ct)
                 ?? throw new InvalidOperationException("Property not found.");
 
             if (property.LandlordId != landlordId)
                 throw new UnauthorizedAccessException("You can only approve requests for your own properties.");
 
-            var pendingStatus = await rentalDb.RentalRequestStatuses
+            var pendingStatus = await db.RentalRequestStatuses
                 .FirstOrDefaultAsync(s => s.Name == "Pending", ct)
                 ?? throw new InvalidOperationException("Rental request status not configured.");
 
             if (rentalRequest.StatusId != pendingStatus.Id)
                 throw new InvalidOperationException("Only pending requests can be approved.");
 
-            var approvedStatus = await rentalDb.RentalRequestStatuses
+            var approvedStatus = await db.RentalRequestStatuses
                 .FirstOrDefaultAsync(s => s.Name == "Approved", ct)
                 ?? throw new InvalidOperationException("Approved status not configured.");
 
@@ -49,7 +49,7 @@ public static class ApproveRentalRequest
 
             property.AvailabilityStatus = "Rented";
 
-            await rentalDb.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(ct);
         }
     }
 }

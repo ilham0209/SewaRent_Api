@@ -26,18 +26,3 @@ public class PropertyEntity : BaseClass
     public PropertyTypeEntity PropertyType { get; set; } = null!;
     public ICollection<PropertyImageEntity> PropertyImages { get; set; } = new List<PropertyImageEntity>();
 }
-
-public class PropertyTypeEntity : BaseClass
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public bool IsActive { get; set; } = true;
-}
-
-public class PropertyImageEntity : BaseClass
-{
-    public Guid PropertyId { get; set; }
-    public string ImageUrl { get; set; } = string.Empty;
-    public bool IsPrimary { get; set; }
-    public int SortOrder { get; set; }
-}

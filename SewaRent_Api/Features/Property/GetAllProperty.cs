@@ -33,7 +33,7 @@ public static class GetAllProperty
         string PropertyTypeName,
         string? ImageUrl);
 
-    public class Handler(PropertyDbContext db)
+    public class Handler(SewaRentDbContext db)
         : IRequestHandler<Query, DataGridResponse<PropertySummary>>
     {
         public async Task<DataGridResponse<PropertySummary>> Handle(Query request, CancellationToken ct)

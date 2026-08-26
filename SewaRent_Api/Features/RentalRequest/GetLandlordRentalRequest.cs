@@ -19,8 +19,7 @@ public static class GetLandlordRentalRequest
         string Status,
         DateTime RequestedAt);
 
-    public class Handler(RentalRequestDbContext rentalDb, PropertyDbContext propertyDb,
-        UserDbContext userDb, IHttpContextAccessor httpContextAccessor)
+    public class Handler(SewaRentDbContext db, IHttpContextAccessor httpContextAccessor)
         : IRequestHandler<Query, DataGridResponse<LandlordRequestSummary>>
     {
         public async Task<DataGridResponse<LandlordRequestSummary>> Handle(Query request, CancellationToken ct)
@@ -28,15 +27,15 @@ public static class GetLandlordRentalRequest
             var landlordId = Guid.Parse(httpContextAccessor.HttpContext!.User
                 .FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var landlordPropertyIds = await propertyDb.Properties
+            var landlordPropertyIds = await db.Properties
                 .Where(p => p.LandlordId == landlordId && !p.IsDeleted)
                 .Select(p => p.Id)
                 .ToListAsync(ct);
 
-            var query = from rr in rentalDb.RentalRequests
-                        join p in propertyDb.Properties on rr.PropertyId equals p.Id
-                        join u in userDb.Users on rr.TenantId equals u.Id
-                        join s in rentalDb.RentalRequestStatuses on rr.StatusId equals s.Id
+            var query = from rr in db.RentalRequests
+                        join p in db.Properties on rr.PropertyId equals p.Id
+                        join u in db.Users on rr.TenantId equals u.Id
+                        join s in db.RentalRequestStatuses on rr.StatusId equals s.Id
                         where landlordPropertyIds.Contains(rr.PropertyId) && !rr.IsDeleted
                         orderby rr.RequestedAt descending
                         select new LandlordRequestSummary(

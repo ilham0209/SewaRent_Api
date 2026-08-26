@@ -23,7 +23,7 @@ public static class Login
         }
     }
 
-    public class Handler(UserDbContext db, IConfiguration configuration)
+    public class Handler(SewaRentDbContext db, IConfiguration configuration)
         : IRequestHandler<Command, Response>
     {
         public async Task<Response> Handle(Command request, CancellationToken ct)
