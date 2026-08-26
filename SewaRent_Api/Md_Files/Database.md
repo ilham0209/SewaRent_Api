@@ -254,15 +254,15 @@ US_Users 1 ─── * US_UserRoles * ─── 1 US_Roles
 
 Defines the type of rental property. Inherits `BaseClass`.
 
-Examples:
+**Seeded defaults:** Apartment, Condo, Landed, Room
+
+Additional examples:
 
 ```text
-Apartment
 Condominium
 Terrace House
 Semi-D
 Bungalow
-Room
 Studio
 ```
 

@@ -40,13 +40,15 @@ public class PropertyController(ISender sender) : ControllerBase
 
     [Authorize]
     [HttpPost]
-    public async Task<IActionResult> Create(CreateProperty.Command command, CancellationToken ct)
-        => CreatedAtAction(nameof(GetById), new { id = command.Title },
-            await sender.Send(command, ct));
+    public async Task<IActionResult> Create([FromBody] CreateProperty.Command command, CancellationToken ct)
+    {
+        var result = await sender.Send(command, ct);
+        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+    }
 
     [Authorize]
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> Update(Guid id, UpdateProperty.Command command, CancellationToken ct)
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateProperty.Command command, CancellationToken ct)
         => Ok(await sender.Send(command with { Id = id }, ct));
 
     [Authorize]
