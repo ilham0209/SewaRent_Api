@@ -4,7 +4,7 @@
 >
 > The goal is to keep the C#/.NET code consistent, readable, maintainable, and easy for both developers and AI coding agents to understand.
 >
-> This document follows the `imas-dotnet-architecture` convention: vertical slice per feature, thin controllers, MediatR request pipeline, FluentValidation, EF Core code-first, and one `DbContext` per data domain.
+> This document follows the `imas-dotnet-architecture` convention: vertical slice per feature, thin controllers, MediatR request pipeline, FluentValidation, EF Core code-first, and per-domain `DbContext`s (`UserDbContext`, `PropertyDbContext`, `FavouriteDbContext`, `RentalRequestDbContext`) sharing the single `SewaRent` database.
 
 ---
 
@@ -55,6 +55,7 @@ Correct:
 PropertyController.cs
 CreateProperty.cs
 PropertyEntities.cs
+UserDbContext.cs
 PropertyDbContext.cs
 GetByIdRentalRequest.cs
 ```
@@ -325,8 +326,6 @@ using SewaRent_Api.Shared.Domain.Property;
 using SewaRent_Api.Shared.Infrastructure.Persistence;
 
 namespace SewaRent_Api.Features.Property;
-
-// ── Command ──────────────────────────────────────────────
 public record CreatePropertyCommand(
     Guid LandlordId,
     string Title,
@@ -503,7 +502,27 @@ Composite-key junction tables (e.g. `Favourites`, `UserRoles`) do **not** inheri
 
 # 15. DbContext & Migrations
 
-Each data domain gets its **own** `DbContext` and its **own** migrations folder. Never share a `DbContext` across domains.
+Each domain has its own `DbContext`, but all point to the **single** database named `SewaRent`. Migrations go into one shared folder.
+
+**Four DbContexts per domain:**
+
+| DbContext | Tables | Namespace |
+|---|---|---|
+| `UserDbContext` | `US_Users`, `US_Roles`, `US_UserRoles` | `Shared.Infrastructure.Persistence` |
+| `PropertyDbContext` | `PR_Property`, `PR_PropertyTypes`, `PR_PropertyImages` | `Shared.Infrastructure.Persistence` |
+| `FavouriteDbContext` | `FA_Favourites` | `Shared.Infrastructure.Persistence` |
+| `RentalRequestDbContext` | `RR_RentalRequests`, `RR_RentalRequestStatuses` | `Shared.Infrastructure.Persistence` |
+
+**Table naming convention:** Every table is prefixed with its domain code via `ToTable()` in `OnModelCreating`:
+
+| Domain | Prefix | Tables |
+|---|---|---|
+| User | `US_` | `US_Users`, `US_Roles`, `US_UserRoles` |
+| Property | `PR_` | `PR_Property`, `PR_PropertyTypes`, `PR_PropertyImages` |
+| Favourites | `FA_` | `FA_Favourites` |
+| Rental Request | `RR_` | `RR_RentalRequests`, `RR_RentalRequestStatuses` |
+
+Each DbContext only declares entities for its own domain. The same `SewaRent` connection string is registered in `Program.cs` for all four contexts.
 
 ```csharp
 // Shared/Infrastructure/Persistence/PropertyDbContext.cs
@@ -522,8 +541,23 @@ public class PropertyDbContext(DbContextOptions<PropertyDbContext> options) : Db
     {
         modelBuilder.Entity<PropertyEntity>(e =>
         {
+            e.ToTable("PR_Property");
             e.HasKey(x => x.Id);
             e.Property(x => x.Title).IsRequired().HasMaxLength(200);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<PropertyTypeEntity>(e =>
+        {
+            e.ToTable("PR_PropertyTypes");
+            e.HasKey(x => x.Id);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<PropertyImageEntity>(e =>
+        {
+            e.ToTable("PR_PropertyImages");
+            e.HasKey(x => x.Id);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
     }
@@ -532,13 +566,16 @@ public class PropertyDbContext(DbContextOptions<PropertyDbContext> options) : Db
 
 Add a global query filter (`HasQueryFilter(x => !x.IsDeleted)`) on every `BaseClass`-derived entity so soft-deleted rows are excluded automatically — do not rely on per-query `Where(x => !x.IsDeleted)` calls.
 
-Create migrations per domain:
+Create migrations against a specific context:
 
 ```text
 Add-Migration -Name {Name} -Context PropertyDbContext
+Add-Migration -Name {Name} -Context UserDbContext
+Add-Migration -Name {Name} -Context FavouriteDbContext
+Add-Migration -Name {Name} -Context RentalRequestDbContext
 ```
 
-Migration files land in `Shared/Infrastructure/Migrations/PropertyDb/`.
+Migration files land in `Shared/Infrastructure/Migrations/`.
 
 ---
 
@@ -709,7 +746,7 @@ public class CreatePropertyTests
     public async Task Handle_ValidCommand_ReturnsMappedResponse()
     {
         // Arrange
-        var db = TestDbFactory.CreatePropertyDb();
+        var db = TestDbFactory.CreateSewaRentDb();
         var handler = new CreatePropertyHandler(db);
         var command = new CreatePropertyCommand(Guid.NewGuid(), "Nice Condo", null, 1500m, Guid.NewGuid());
 
@@ -775,7 +812,7 @@ AI agents working on the SewaRent API must follow these rules:
 5. Follow the vertical-slice pattern: Command/Query + Validator + Response + Handler in one feature file.
 6. Keep controllers thin — dispatch only, no business logic.
 7. Entities must inherit `BaseClass` unless they are a composite-key junction table (see `DATABASE.md` §3.3).
-8. Each data domain has its own `DbContext` and its own migrations subfolder — never share a `DbContext` across domains.
+8. Each domain has its own DbContext (`UserDbContext`, `PropertyDbContext`, `FavouriteDbContext`, `RentalRequestDbContext`), all sharing a single database (`SewaRent`). Tables are prefixed with domain code via `ToTable()`.
 9. Never issue a physical `DELETE` against a `BaseClass`-derived table — always soft-delete via `IsDeleted`.
 10. Never invent API endpoints not documented in `INTEGRATION.md`.
 11. Never invent database columns or tables not documented in `DATABASE.md`.
