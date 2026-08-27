@@ -27,4 +27,9 @@ public class ProfileController(ISender sender) : ControllerBase
     public async Task<IActionResult> UpdateProfileImage(
         UpdateProfileImage.Command command, CancellationToken ct)
         => Ok(await sender.Send(command, ct));
+
+    [HttpPut("me/bank-details")]
+    public async Task<IActionResult> UpdateBankDetails(
+        UpdateBankDetails.Command command, CancellationToken ct)
+        => Ok(await sender.Send(command, ct));
 }

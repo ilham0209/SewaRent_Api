@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using SewaRent_Api.Shared.Domain.Billing;
 using SewaRent_Api.Shared.Domain.Favourite;
+using SewaRent_Api.Shared.Domain.Notification;
 using SewaRent_Api.Shared.Domain.Property;
 using SewaRent_Api.Shared.Domain.RentalRequest;
 using SewaRent_Api.Shared.Domain.User;
@@ -17,6 +19,10 @@ public class SewaRentDbContext(DbContextOptions<SewaRentDbContext> options) : Db
     public DbSet<FavouriteEntity> Favourites => Set<FavouriteEntity>();
     public DbSet<RentalRequestEntity> RentalRequests => Set<RentalRequestEntity>();
     public DbSet<RentalRequestStatusEntity> RentalRequestStatuses => Set<RentalRequestStatusEntity>();
+    public DbSet<InvoiceEntity> Invoices => Set<InvoiceEntity>();
+    public DbSet<InvoiceItemEntity> InvoiceItems => Set<InvoiceItemEntity>();
+    public DbSet<ReceiptEntity> Receipts => Set<ReceiptEntity>();
+    public DbSet<PaymentNotificationEntity> PaymentNotifications => Set<PaymentNotificationEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,7 +35,12 @@ public class SewaRentDbContext(DbContextOptions<SewaRentDbContext> options) : Db
             e.Property(x => x.PasswordHash).IsRequired().HasMaxLength(500);
             e.Property(x => x.PhoneNumber).HasMaxLength(30);
             e.Property(x => x.ProfileImageUrl).HasMaxLength(1000);
+            e.Property(x => x.LandlordCode).HasMaxLength(20);
+            e.Property(x => x.BankName).HasMaxLength(100);
+            e.Property(x => x.BankAccountNumber).HasMaxLength(50);
             e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.LandlordCode).IsUnique();
+            e.HasIndex(x => x.LandlordId);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
 
@@ -120,6 +131,59 @@ public class SewaRentDbContext(DbContextOptions<SewaRentDbContext> options) : Db
             e.Property(x => x.Name).IsRequired().HasMaxLength(50);
             e.Property(x => x.Description).HasMaxLength(255);
             e.HasIndex(x => x.Name).IsUnique();
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<InvoiceEntity>(e =>
+        {
+            e.ToTable("BL_Invoices");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.InvoiceNumber).IsRequired().HasMaxLength(50);
+            e.Property(x => x.RentAmount).HasColumnType("decimal(18,2)");
+            e.Property(x => x.UtilityTotal).HasColumnType("decimal(18,2)");
+            e.Property(x => x.TotalAmount).HasColumnType("decimal(18,2)");
+            e.Property(x => x.Status).IsRequired().HasMaxLength(30);
+            e.Property(x => x.RejectReason).HasMaxLength(500);
+            e.Property(x => x.BankNameSnapshot).HasMaxLength(100);
+            e.Property(x => x.BankAccountNumberSnapshot).HasMaxLength(50);
+            e.HasIndex(x => x.RentalRequestId);
+            e.HasIndex(x => x.Status);
+            e.HasIndex(x => x.DueDate);
+            e.HasIndex(x => x.InvoiceNumber).IsUnique();
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<InvoiceItemEntity>(e =>
+        {
+            e.ToTable("BL_InvoiceItems");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ItemType).IsRequired().HasMaxLength(30);
+            e.Property(x => x.Description).HasMaxLength(255);
+            e.Property(x => x.Amount).HasColumnType("decimal(18,2)");
+            e.HasIndex(x => x.InvoiceId);
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<ReceiptEntity>(e =>
+        {
+            e.ToTable("BL_Receipts");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ReceiptNumber).IsRequired().HasMaxLength(50);
+            e.HasIndex(x => x.InvoiceId).IsUnique();
+            e.HasIndex(x => x.ReceiptNumber).IsUnique();
+            e.HasQueryFilter(x => !x.IsDeleted);
+        });
+
+        modelBuilder.Entity<PaymentNotificationEntity>(e =>
+        {
+            e.ToTable("NO_PaymentNotifications");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.NotificationType).IsRequired().HasMaxLength(30);
+            e.Property(x => x.RecipientRole).IsRequired().HasMaxLength(20);
+            e.Property(x => x.Message).HasMaxLength(1000);
+            e.HasIndex(x => x.RentalRequestId);
+            e.HasIndex(x => x.NotificationType);
+            e.HasIndex(x => x.SentAt);
             e.HasQueryFilter(x => !x.IsDeleted);
         });
     }

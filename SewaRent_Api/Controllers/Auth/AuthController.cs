@@ -35,4 +35,12 @@ public class AuthController(ISender sender) : ControllerBase
 
         return Ok(new { id = userId, email, role });
     }
+
+    [Authorize]
+    [HttpPost("link-landlord")]
+    public async Task<IActionResult> LinkLandlord([FromBody] LinkLandlord.Command command, CancellationToken ct)
+    {
+        var result = await sender.Send(command, ct);
+        return Ok(new { message = "Successfully linked to landlord.", data = result });
+    }
 }

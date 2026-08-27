@@ -757,6 +757,14 @@ Before adding a package:
 
 Do not add a package simply because it's popular. Do not introduce a second validation, mediator, or ORM library alongside FluentValidation/MediatR/EF Core.
 
+### 27.1 PDF Generation
+
+Invoice/receipt PDF generation (`GET /api/invoices/{id}/pdf`, `GET /api/receipts/{id}/pdf`, per `INTEGRATION.md` §14) requires a single PDF library, chosen once and used consistently across `Features/Billing`. Do not mix multiple PDF libraries. This is pure document generation from `BL_Invoices`/`BL_InvoiceItems`/`BL_Receipts` data — it has no dependency on any payment gateway.
+
+### 27.2 Background Jobs
+
+`ScheduledPaymentReminderJob` and `OverdueInvoiceCheckJob` (per `README.md` §6) require a single scheduling mechanism (e.g. a hosted background service or a scheduling library), chosen once and reused for both jobs rather than introducing a different scheduler per job.
+
 ---
 
 # 28. AI Coding Agent Rules
@@ -784,6 +792,9 @@ AI agents working on the SewaRent API must follow these rules:
 19. Fix analyzer/nullable warnings introduced by the change.
 20. Update documentation when architecture, endpoints, or database contracts change.
 21. Preserve existing naming conventions.
+22. Never derive `US_Users.LandlordId` (tenant side) from client input — always resolve it server-side from `LandlordCode`.
+23. Never recompute `BL_Invoices` snapshot fields (`RentAmount`, `BankNameSnapshot`, `BankAccountNumberSnapshot`) from live data after generation — treat them as immutable once written.
+24. Always validate `RejectReason` as required when a handler transitions `BL_Invoices.Status` from `PaymentClaimed` back to `Unpaid`.
 
 ---
 
