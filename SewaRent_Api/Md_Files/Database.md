@@ -56,6 +56,8 @@ The API is the only application component that directly accesses MSSQL. All doma
 | Property | `PR_` | PR_Property, PR_PropertyTypes, PR_PropertyImages |
 | Favourite | `FA_` | FA_Favourites |
 | Rental Request | `RR_` | RR_RentalRequests, RR_RentalRequestStatuses |
+| Billing | `BL_` | BL_Invoices, BL_InvoiceItems, BL_Receipts |
+| Notification | `NO_` | NO_PaymentNotifications |
 
 ---
 
@@ -131,6 +133,10 @@ PR_PropertyImages
 FA_Favourites
 RR_RentalRequests
 RR_RentalRequestStatuses
+BL_Invoices
+BL_InvoiceItems
+BL_Receipts
+NO_PaymentNotifications
 ```
 
 Optional/future tables:
@@ -145,6 +151,8 @@ RefreshTokens
 AuditLogs
 Reports
 ```
+
+> `Notifications` above is a **generic future** in-app notification table (e.g. rental-request status changes). It is distinct from `NO_PaymentNotifications` (§17), which is already scoped for payment reminders.
 
 ---
 
@@ -165,6 +173,14 @@ Stores application users. Inherits `BaseClass`.
 | PhoneNumber | nvarchar(30) | Nullable |
 | ProfileImageUrl | nvarchar(1000) | Nullable |
 | IsActive | bit | Required — account enabled/suspended (business status, distinct from `IsDeleted`) |
+| LandlordCode | nvarchar(20) | Nullable, unique — auto-generated when a **Landlord** account is created (e.g. `LL-260827-01`). Null for Tenant/Admin accounts. Displayed on the landlord's profile so it can be shared with tenants |
+| LandlordId | uniqueidentifier | Nullable, self-referencing FK → US_Users.Id — set on a **Tenant** account once they link to a landlord via `LandlordCode`. Null until linked, and null for Landlord/Admin accounts |
+| BankName | nvarchar(100) | Nullable — landlord's bank (e.g. "Maybank"). Editable at any time |
+| BankAccountNumber | nvarchar(50) | Nullable — landlord's bank account number. Editable at any time |
+
+**Landlord scoping:** a Tenant only sees properties belonging to the landlord referenced by their own `LandlordId`. `GET /api/properties` and related endpoints filter by `PR_Property.LandlordId == currentUser.LandlordId`, not a global listing (see §26 Important Business Rules).
+
+**Bank details:** `BankName` / `BankAccountNumber` are shown to a tenant when an invoice is generated, so they know where to transfer payment. Because these fields are editable, `BL_Invoices` stores its own snapshot (`BankNameSnapshot` / `BankAccountNumberSnapshot`) at generation time rather than reading these columns live — see §14.
 
 ### Relationships
 
@@ -173,7 +189,8 @@ US_Users
  ├── US_UserRoles
  ├── PR_Property (landlord)
  ├── FA_Favourites
- └── RR_RentalRequests (tenant)
+ ├── RR_RentalRequests (tenant)
+ └── US_Users.LandlordId → US_Users.Id (tenant → landlord, self-referencing)
 ```
 
 ### Used by
@@ -186,6 +203,8 @@ US_Users
 - Authentication
 - Authorization
 - Rental request ownership
+- Link tenant to landlord (`LandlordCode`)
+- Landlord bank details for invoices
 
 ---
 
@@ -475,7 +494,169 @@ RR_RentalRequests
 
 ---
 
-# 14. Optional Future: Amenities
+# 14. Invoices
+
+## Table: `BL_Invoices`
+
+Stores monthly rent invoices generated for a tenant under a rental request. Inherits `BaseClass`. Domain prefix `BL_` (Billing).
+
+Invoices are generated **only** for `Scheduled` payment notifications (see §17 `NO_PaymentNotifications`). A `Manual` reminder never generates an invoice.
+
+### Columns
+
+| Column | Type | Notes |
+|---|---|---|
+| *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
+| RentalRequestId | uniqueidentifier | FK → RR_RentalRequests.Id |
+| InvoiceNumber | nvarchar(50) | Required, unique |
+| BillingPeriodMonth | int | Required (1–12) |
+| BillingPeriodYear | int | Required |
+| RentAmount | decimal(18,2) | Required — snapshot of `PR_Property.MonthlyRent` at generation time |
+| UtilityTotal | decimal(18,2) | Nullable — sum of related `BL_InvoiceItems` where `ItemType != Rent` |
+| TotalAmount | decimal(18,2) | Required — `RentAmount + UtilityTotal` |
+| Status | nvarchar(30) | Required — `Unpaid`, `PaymentClaimed`, `Paid` |
+| DueDate | datetime2 | Required |
+| PaidDate | datetime2 | Nullable — set when Status becomes `Paid` |
+| RejectReason | nvarchar(500) | Nullable — **mandatory input** (enforced by API validation) when Status moves `PaymentClaimed → Unpaid` |
+| BankNameSnapshot | nvarchar(100) | Nullable — copied from `US_Users.BankName` (landlord) at generation time |
+| BankAccountNumberSnapshot | nvarchar(50) | Nullable — copied from `US_Users.BankAccountNumber` at generation time |
+| PdfGeneratedAt | datetime2 | Nullable |
+
+**Why snapshot bank details:** `US_Users.BankName` / `BankAccountNumber` are editable at any time. Invoices must retain the bank details that were valid when the tenant was billed so a landlord updating their bank account never changes an already-issued invoice.
+
+### Relationships
+
+```text
+RR_RentalRequests
+      |
+      v
+  BL_Invoices
+      |
+      ├── BL_InvoiceItems (1 - many)
+      └── BL_Receipts (1 - 1, once Paid)
+```
+
+### Used by
+
+- Generate invoice (scheduled background job)
+- Tenant view invoice
+- Payment already made (tenant)
+- Accept/reject payment (landlord)
+- Overdue check (background job)
+- Invoice PDF download
+- Dashboard (landlord + tenant)
+
+---
+
+# 15. InvoiceItems
+
+## Table: `BL_InvoiceItems`
+
+Line items belonging to an invoice. Keeps rent and utility charges traceable separately even though they are billed and paid together. Inherits `BaseClass`.
+
+### Columns
+
+| Column | Type | Notes |
+|---|---|---|
+| *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
+| InvoiceId | uniqueidentifier | FK → BL_Invoices.Id |
+| ItemType | nvarchar(30) | Required — `Rent`, `Water`, `Electricity`, `Other` |
+| Description | nvarchar(255) | Nullable |
+| Amount | decimal(18,2) | Required |
+
+Utility line items (`Water`, `Electricity`, `Other`) are **optional**. A landlord who already includes utilities in the monthly rent simply never adds them. When present, each utility stays its own row so it can be traced/reported separately, even though its amount is folded into `BL_Invoices.TotalAmount`.
+
+### Relationships
+
+```text
+BL_Invoices
+      |
+      v
+BL_InvoiceItems
+```
+
+### Used by
+
+- Generate invoice
+- Invoice details
+- Invoice PDF
+
+---
+
+# 16. Receipts
+
+## Table: `BL_Receipts`
+
+Issued automatically once a landlord accepts a claimed payment. Inherits `BaseClass`.
+
+### Columns
+
+| Column | Type | Notes |
+|---|---|---|
+| *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
+| InvoiceId | uniqueidentifier | FK → BL_Invoices.Id, unique (1–1) |
+| ReceiptNumber | nvarchar(50) | Required, unique |
+| IssuedDate | datetime2 | Required |
+| PdfGeneratedAt | datetime2 | Nullable |
+
+### Relationships
+
+```text
+BL_Invoices
+      |
+      v (1-1, only once Status = Paid)
+BL_Receipts
+```
+
+### Used by
+
+- Accept payment (auto-generated as part of this action)
+- Tenant/landlord receipt download
+- Dashboard history
+
+---
+
+# 17. PaymentNotifications
+
+## Table: `NO_PaymentNotifications`
+
+Tracks rent-payment reminders and payment-related alerts between landlord and tenant. Inherits `BaseClass`. Domain prefix `NO_` (Notification).
+
+This table is specific to payment reminders and is distinct from the generic future `Notifications` table in §20.
+
+### Columns
+
+| Column | Type | Notes |
+|---|---|---|
+| *(BaseClass)* | — | Id, SysUserCreated, SysDateCreated, SysUserModified, SysDateModified, IsDeleted |
+| RentalRequestId | uniqueidentifier | FK → RR_RentalRequests.Id |
+| NotificationType | nvarchar(30) | Required — `Scheduled`, `Manual`, `Overdue` |
+| RecipientRole | nvarchar(20) | Required — `Tenant` (Scheduled, Manual) or `Landlord` (Overdue) |
+| InvoiceId | uniqueidentifier | Nullable — FK → BL_Invoices.Id. Set **only** when `NotificationType = Scheduled` |
+| ScheduleDay | int | Nullable — day of month (1–31); used only when `NotificationType = Scheduled` |
+| Message | nvarchar(1000) | Nullable |
+| SentAt | datetime2 | Required |
+| IsRead | bit | Required |
+
+### Business rules
+
+| NotificationType | Recipient | Trigger | Generates Invoice? |
+|---|---|---|---|
+| `Scheduled` | Tenant | Background job, matches landlord's `ScheduleDay` | Yes — `InvoiceId` populated |
+| `Manual` | Tenant | Landlord clicks "Send Reminder" (any time) | No — `InvoiceId` stays null |
+| `Overdue` | Landlord | Background job, `BL_Invoices.DueDate` passed and `Status` still `Unpaid`/`PaymentClaimed` | No |
+
+### Used by
+
+- Scheduled reminder job
+- Manual reminder button
+- Payment-claimed notice (to landlord)
+- Overdue notice (to landlord)
+- Notification list
+
+---
+
+# 18. Optional Future: Amenities
 
 ## Table: `Amenities`
 
@@ -504,7 +685,7 @@ Security
 
 ---
 
-# 15. Optional Future: PropertyAmenitiesMap
+# 19. Optional Future: PropertyAmenitiesMap
 
 Many-to-many relationship. **Composite key — does not inherit `BaseClass`** (see §3.3).
 
@@ -530,11 +711,11 @@ Used by:
 
 ---
 
-# 16. Optional Future: Notifications
+# 20. Optional Future: Notifications
 
 ## Table: `Notifications`
 
-For future push/in-app notifications. Inherits `BaseClass`.
+For future generic push/in-app notifications (e.g. rental-request status changes). Inherits `BaseClass`. **Not** for payment reminders — those use `NO_PaymentNotifications` (§17), which is already implemented.
 
 ### Columns
 
@@ -559,7 +740,7 @@ Property status changed
 
 ---
 
-# 17. Optional Future: RefreshTokens
+# 21. Optional Future: RefreshTokens
 
 If refresh-token authentication is implemented. Inherits `BaseClass`.
 
@@ -579,7 +760,7 @@ The final authentication architecture will determine whether this table is requi
 
 ---
 
-# 18. Optional Future: AuditLogs
+# 22. Optional Future: AuditLogs
 
 For administrative/audit requirements. Inherits `BaseClass` (audit-of-audit — still gets its own row lifecycle tracked consistently).
 
@@ -599,7 +780,7 @@ For administrative/audit requirements. Inherits `BaseClass` (audit-of-audit — 
 
 ---
 
-# 19. Table Relationship Overview
+# 23. Table Relationship Overview
 
 ```text
                            ┌──────────────┐
@@ -640,11 +821,24 @@ US_Users ────────────────┐
              ┌───────────┴───────────┐
              ▼                       ▼
         PR_Property       RR_RentalRequestStatuses
+                         │
+                         ▼
+                   BL_Invoices
+                    │        │
+                    ▼        ▼
+          BL_InvoiceItems  BL_Receipts
+
+RR_RentalRequests
+        │
+        ▼
+NO_PaymentNotifications ─── BL_Invoices (only when NotificationType = Scheduled)
+
+US_Users (Tenant) ── LandlordId ──► US_Users (Landlord)
 ```
 
 ---
 
-# 20. Feature → Table Mapping
+# 24. Feature → Table Mapping
 
 | Feature | Tables |
 |---|---|
@@ -668,6 +862,18 @@ US_Users ────────────────┐
 | Approve request | RR_RentalRequests, PR_Property |
 | Reject request | RR_RentalRequests |
 | Cancel request | RR_RentalRequests |
+| Link tenant to landlord | US_Users |
+| Update bank details | US_Users |
+| Send scheduled reminder (job) | NO_PaymentNotifications, BL_Invoices, BL_InvoiceItems, RR_RentalRequests, US_Users |
+| Send manual reminder | NO_PaymentNotifications, RR_RentalRequests |
+| Send overdue notice (job) | NO_PaymentNotifications, BL_Invoices |
+| View invoice | BL_Invoices, BL_InvoiceItems |
+| Payment already made (tenant) | BL_Invoices, NO_PaymentNotifications |
+| Accept payment (landlord) | BL_Invoices, BL_Receipts |
+| Reject payment (landlord) | BL_Invoices |
+| Download invoice/receipt PDF | BL_Invoices, BL_Receipts |
+| Landlord dashboard | BL_Invoices, RR_RentalRequests, US_Users |
+| Tenant dashboard | BL_Invoices, BL_Receipts, RR_RentalRequests |
 | Amenities | Amenities, PropertyAmenitiesMap |
 | Notifications | Notifications, US_Users |
 | Refresh token | RefreshTokens, US_Users |
@@ -675,7 +881,7 @@ US_Users ────────────────┐
 
 ---
 
-# 21. Function → Database Mapping
+# 25. Function → Database Mapping
 
 This section is specifically intended for AI agents.
 
@@ -733,7 +939,44 @@ This section is specifically intended for AI agents.
 
 ---
 
-# 22. Important Business Rules
+## Billing
+
+| Function | Primary tables | Related tables |
+|---|---|---|
+| Generate invoice (scheduled job) | BL_Invoices | BL_InvoiceItems, RR_RentalRequests, PR_Property, US_Users |
+| Get invoice details | BL_Invoices | BL_InvoiceItems |
+| Payment already made | BL_Invoices | NO_PaymentNotifications |
+| Accept payment | BL_Invoices | BL_Receipts |
+| Reject payment | BL_Invoices | — |
+| Overdue check (job) | BL_Invoices | NO_PaymentNotifications, PR_Property, US_Users |
+| Download invoice PDF | BL_Invoices | BL_InvoiceItems |
+| Download receipt PDF | BL_Receipts | BL_Invoices |
+
+---
+
+## Notification
+
+| Function | Primary tables | Related tables |
+|---|---|---|
+| Link tenant to landlord | US_Users | — |
+| Update bank details | US_Users | — |
+| Send scheduled reminder (job) | NO_PaymentNotifications | BL_Invoices, RR_RentalRequests |
+| Send manual reminder | NO_PaymentNotifications | RR_RentalRequests |
+| Send overdue notice (job) | NO_PaymentNotifications | BL_Invoices |
+| Get notifications | NO_PaymentNotifications | RR_RentalRequests |
+
+---
+
+## Dashboard
+
+| Function | Primary tables | Related tables |
+|---|---|---|
+| Landlord dashboard summary | BL_Invoices | RR_RentalRequests, US_Users, PR_Property |
+| Tenant dashboard summary | BL_Invoices | BL_Receipts, RR_RentalRequests |
+
+---
+
+# 26. Important Business Rules
 
 ### Property ownership
 
@@ -804,7 +1047,46 @@ The API must validate state transitions.
 
 ---
 
-# 23. Index Recommendations
+### Landlord scoping (tenant visibility)
+
+A tenant only sees properties belonging to the landlord they are linked to:
+
+```text
+PR_Property.LandlordId == currentUser.LandlordId
+```
+
+- `US_Users.LandlordId` (tenant side) is set by linking via `US_Users.LandlordCode` (landlord side) — never accepted as a raw `landlordId` from the client.
+- A tenant with `LandlordId == null` (not yet linked) sees an empty property list until linked.
+- `LandlordCode` is generated once, automatically, when a Landlord account is created, and is unique across `US_Users`.
+
+---
+
+### Invoice generation and bank snapshot
+
+- `BL_Invoices` is only ever created by the scheduled reminder job (`NotificationType = Scheduled`). A `Manual` reminder never creates an invoice.
+- `RentAmount` is copied from `PR_Property.MonthlyRent`, and `BankNameSnapshot` / `BankAccountNumberSnapshot` are copied from the landlord's `US_Users` record, all at the moment of generation. These snapshots must never be recalculated or overwritten after creation, even if the source values later change.
+- `UtilityTotal` and `TotalAmount` are derived from the sum of related `BL_InvoiceItems`; utility items are optional per invoice.
+
+---
+
+### Payment claim / accept / reject
+
+- A tenant marks an invoice `PaymentClaimed` via "Payment Already Made." No proof of payment is required at this stage — the landlord verifies manually against their own bank records.
+- Only the landlord who owns the property (via `RentalRequestId → PropertyId → LandlordId`) may accept or reject a claimed payment.
+- **Accept**: `Status → Paid`, `PaidDate` set, and a `BL_Receipts` row is generated automatically (1–1 with the invoice).
+- **Reject**: `Status → Unpaid`, and `RejectReason` is **mandatory** — the API must reject the request with a validation error if `RejectReason` is empty.
+- The same invoice (same `DueDate`) is reused after a rejection; a new invoice is not generated. The tenant must resubmit "Payment Already Made" once they pay again.
+
+---
+
+### Overdue notification
+
+- A background job checks daily for `BL_Invoices` where `DueDate < today` and `Status` is still `Unpaid` or `PaymentClaimed`.
+- One `NO_PaymentNotifications` row (`NotificationType = Overdue`) is created per overdue invoice, sent to the **landlord** who owns the property — not the tenant.
+
+---
+
+# 27. Index Recommendations
 
 Potential indexes:
 
@@ -833,6 +1115,63 @@ MonthlyRent
 AvailabilityStatus
 IsActive
 IsDeleted
+```
+
+### US_Users (additional)
+
+Unique index on:
+
+```text
+LandlordCode
+```
+
+Index on:
+
+```text
+LandlordId
+```
+
+### BL_Invoices
+
+Indexes on:
+
+```text
+RentalRequestId
+Status
+DueDate
+```
+
+Unique index on:
+
+```text
+InvoiceNumber
+```
+
+### BL_InvoiceItems
+
+Index on:
+
+```text
+InvoiceId
+```
+
+### BL_Receipts
+
+Unique index on:
+
+```text
+InvoiceId
+ReceiptNumber
+```
+
+### NO_PaymentNotifications
+
+Indexes on:
+
+```text
+RentalRequestId
+NotificationType
+SentAt
 ```
 
 ### FA_Favourites
@@ -866,7 +1205,7 @@ PropertyId
 
 ---
 
-# 24. Monetary Values
+# 28. Monetary Values
 
 Rental prices must use:
 
@@ -884,7 +1223,7 @@ MonthlyRent = 1250.00
 
 ---
 
-# 25. Date/Time
+# 29. Date/Time
 
 Use:
 
@@ -904,7 +1243,7 @@ Recommended approach:
 
 ---
 
-# 26. Database Security
+# 30. Database Security
 
 Never:
 
@@ -917,7 +1256,7 @@ Never:
 
 ---
 
-# 27. AI Agent Database Rules
+# 31. AI Agent Database Rules
 
 Before changing database-related code:
 
@@ -936,11 +1275,14 @@ Before changing database-related code:
 13. New entities with a single surrogate key must inherit `BaseClass` — do not redeclare `SysUserCreated`/`SysDateCreated`/`IsDeleted` manually.
 14. Never issue a physical `DELETE` against a `BaseClass`-derived table — always soft-delete via `IsDeleted`.
 15. All table/column names use PascalCase.
-16. Follow the domain-prefix naming convention: `US_` for User, `PR_` for Property, `FA_` for Favourite, `RR_` for Rental Request.
+16. Follow the domain-prefix naming convention: `US_` for User, `PR_` for Property, `FA_` for Favourite, `RR_` for Rental Request, `BL_` for Billing, `NO_` for Notification.
+17. Never recompute `BL_Invoices.BankNameSnapshot` / `BankAccountNumberSnapshot` / `RentAmount` from live data after the invoice is generated — they are point-in-time snapshots by design.
+18. `RejectReason` on `BL_Invoices` must be validated as required whenever a payment rejection changes `Status` back to `Unpaid`.
+19. Never accept `LandlordId` (tenant-side) directly from client input for linking — it must be derived by looking up `US_Users.LandlordCode`.
 
 ---
 
-# 28. Database Status
+# 32. Database Status
 
 Current status:
 
@@ -957,27 +1299,29 @@ The table definitions in this document are the **initial proposed design** and m
 
 ---
 
-# 29. Future Schema Extensions
+# 33. Future Schema Extensions
 
 Potential future modules:
 
 ```text
-Payments
 RentalContracts
 PropertyVisits
 Reviews
 Reports
-Notifications
+Notifications (generic, non-payment)
 Messaging
 Documents
 MaintenanceRequests
 PropertyVerification
+Payment gateway integration (online payment, replacing manual bank transfer)
 ```
+
+`Payments`/billing and payment-reminder notifications are **no longer future items** — they are implemented as `BL_Invoices`, `BL_InvoiceItems`, `BL_Receipts`, and `NO_PaymentNotifications` (§14–§17). Online payment gateway integration remains a future extension; the current design assumes manual bank transfer with landlord verification.
 
 These should only be introduced when the corresponding product requirements are approved.
 
 ---
 
-# 30. Data Length
+# 34. Data Length
 
 Data length constraints (`HasMaxLength`, etc.) are configured at the `DbContext` level (`OnModelCreating`), not on the domain entity classes — entities stay plain POCOs.

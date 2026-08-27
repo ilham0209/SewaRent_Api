@@ -55,6 +55,11 @@ public static class Register
                 SysDateCreated = DateTime.UtcNow
             };
 
+            if (request.Role == "Landlord")
+            {
+                user.LandlordCode = await GenerateLandlordCode(db, ct);
+            }
+
             db.Users.Add(user);
             await db.SaveChangesAsync(ct);
 
@@ -69,6 +74,25 @@ public static class Register
             await db.SaveChangesAsync(ct);
 
             return new Response(user.Id, user.FullName, user.Email, role.Name);
+        }
+        private static async Task<string> GenerateLandlordCode(SewaRentDbContext db, CancellationToken ct)
+        {
+            var datePart = DateTime.UtcNow.ToString("yyMMdd");
+            var prefix = $"LL-{datePart}-";
+            var lastCode = await db.Users
+                .Where(u => u.LandlordCode != null && u.LandlordCode.StartsWith(prefix))
+                .OrderByDescending(u => u.LandlordCode)
+                .Select(u => u.LandlordCode)
+                .FirstOrDefaultAsync(ct);
+
+            var sequence = 1;
+            if (lastCode is not null)
+            {
+                var lastSequence = int.Parse(lastCode.Substring(lastCode.LastIndexOf('-') + 1));
+                sequence = lastSequence + 1;
+            }
+
+            return $"{prefix}{sequence:D2}";
         }
     }
 }

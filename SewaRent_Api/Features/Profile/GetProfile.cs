@@ -9,7 +9,15 @@ public static class GetProfile
 {
     public record Query(Guid UserId) : IRequest<Response?>;
 
-    public record Response(Guid Id, string FullName, string Email, string? PhoneNumber, string? ProfileImageUrl);
+    public record Response(
+        Guid Id,
+        string FullName,
+        string Email,
+        string? PhoneNumber,
+        string? ProfileImageUrl,
+        string? LandlordCode,
+        string? BankName,
+        string? BankAccountNumber);
 
     public class Handler(SewaRentDbContext db) : IRequestHandler<Query, Response?>
     {
@@ -19,7 +27,15 @@ public static class GetProfile
             if (user is null || user.IsDeleted)
                 return null;
 
-            return new Response(user.Id, user.FullName, user.Email, user.PhoneNumber, user.ProfileImageUrl);
+            return new Response(
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.PhoneNumber,
+                user.ProfileImageUrl,
+                user.LandlordCode,
+                user.BankName,
+                user.BankAccountNumber);
         }
     }
 }

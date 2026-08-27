@@ -10,6 +10,7 @@ using SewaRent_Api.Shared.Domain.RentalRequest;
 using SewaRent_Api.Shared.Domain.User;
 using SewaRent_Api.Shared.Infrastructure.Behavior;
 using SewaRent_Api.Shared.Infrastructure.Persistence;
+using SewaRent_Api.Shared.Infrastructure.BackgroundJobs;
 using SewaRent_Api.Shared.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -59,6 +60,9 @@ builder.Services.AddCors(options =>
               .AllowAnyHeader();
     });
 });
+
+builder.Services.AddHostedService<ScheduledPaymentReminderJob>();
+builder.Services.AddHostedService<OverdueInvoiceCheckJob>();
 
 var app = builder.Build();
 
@@ -144,7 +148,8 @@ void SeedRentalRequestStatuses()
             new RentalRequestStatusEntity { Name = "Pending", Description = "Request is awaiting landlord action", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
             new RentalRequestStatusEntity { Name = "Approved", Description = "Landlord has approved the request", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
             new RentalRequestStatusEntity { Name = "Rejected", Description = "Landlord has rejected the request", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
-            new RentalRequestStatusEntity { Name = "Cancelled", Description = "Tenant has cancelled the request", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow }
+            new RentalRequestStatusEntity { Name = "Cancelled", Description = "Tenant has cancelled the request", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow },
+            new RentalRequestStatusEntity { Name = "Expired", Description = "Request has expired", SysUserCreated = "System", SysDateCreated = DateTime.UtcNow }
         };
 
         db.RentalRequestStatuses.AddRange(statuses);

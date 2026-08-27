@@ -10,6 +10,10 @@ public class UserEntity : BaseClass
     public string? PhoneNumber { get; set; }
     public string? ProfileImageUrl { get; set; }
     public bool IsActive { get; set; } = true;
+    public string? LandlordCode { get; set; }
+    public Guid? LandlordId { get; set; }
+    public string? BankName { get; set; }
+    public string? BankAccountNumber { get; set; }
 
     public ICollection<UserRoleEntity> UserRoles { get; set; } = new List<UserRoleEntity>();
 }

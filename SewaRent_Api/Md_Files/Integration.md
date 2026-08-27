@@ -202,6 +202,8 @@ POST /api/auth/reset-password
 
 ## 7. Property Integration
 
+> **Landlord scoping:** `GET /api/properties` and related endpoints are scoped to the authenticated tenant's linked landlord (`PR_Property.LandlordId == currentUser.LandlordId`) — this is no longer an open marketplace across all landlords. See §13 for how a tenant links to a landlord.
+
 ### Get properties
 
 ```text
@@ -292,7 +294,7 @@ Request body:
 
 ---
 
-## 8. Property Image Integration
+## 9. Property Image Integration
 
 ### Upload image
 
@@ -318,7 +320,7 @@ The API should return a public/authorized image URL or image identifier that the
 
 ---
 
-## 9. Favourite Integration
+## 10. Favourite Integration
 
 ### Get current user's favourites
 
@@ -350,7 +352,7 @@ The API should use the authenticated user from the JWT rather than accepting an 
 
 ---
 
-## 10. Rental Request Integration
+## 11. Rental Request Integration
 
 ### Create rental request
 
@@ -407,7 +409,7 @@ The API must verify that the authenticated landlord owns the property associated
 
 ---
 
-## 11. Profile Integration
+## 12. Profile Integration
 
 ### Get profile
 
@@ -440,7 +442,231 @@ POST /api/users/me/profile-image
 
 ---
 
-## 12. API Response Standard
+## 13. Landlord Linking & Bank Details Integration
+
+### Get landlord code (landlord's own profile)
+
+Already part of profile response (§11):
+
+```text
+GET /api/users/me
+```
+
+Response concept adds:
+
+```json
+{
+  "landlordCode": "LL-260827-01",
+  "bankName": "Maybank",
+  "bankAccountNumber": "1234567890"
+}
+```
+
+### Update bank details (landlord only)
+
+```text
+PUT /api/users/me/bank-details
+```
+
+Request concept:
+
+```json
+{
+  "bankName": "Maybank",
+  "bankAccountNumber": "1234567890"
+}
+```
+
+Editable at any time. Does not retroactively change bank details already snapshotted onto issued invoices — see `DATABASE.md` §14.
+
+### Link tenant to landlord
+
+```text
+POST /api/auth/link-landlord
+```
+
+Request concept:
+
+```json
+{
+  "landlordCode": "LL-260827-01"
+}
+```
+
+Response concept:
+
+```json
+{
+  "success": true,
+  "message": null,
+  "data": {
+    "landlordId": "..."
+  }
+}
+```
+
+The API resolves `landlordCode` to a `landlordId` server-side and stores it on the authenticated tenant's own record. The mobile app must never send a raw `landlordId`.
+
+### Property visibility rule
+
+Once linked, all property-browsing endpoints (`GET /api/properties`, search, filters) return only properties where:
+
+```text
+PR_Property.LandlordId == currentUser.LandlordId
+```
+
+A tenant with no linked landlord receives an empty list, not an error, and the mobile app should show a "link to your landlord" empty state prompting for the landlord code.
+
+---
+
+## 14. Billing & Invoice Integration
+
+### Get invoice details
+
+```text
+GET /api/invoices/{id}
+```
+
+Response concept:
+
+```json
+{
+  "invoiceNumber": "INV-2026-08-0001",
+  "billingPeriodMonth": 8,
+  "billingPeriodYear": 2026,
+  "items": [
+    { "itemType": "Rent", "description": "Monthly rent", "amount": 1200.00 },
+    { "itemType": "Water", "description": "Water bill", "amount": 25.00 }
+  ],
+  "totalAmount": 1225.00,
+  "status": "Unpaid",
+  "dueDate": "...",
+  "bankName": "Maybank",
+  "bankAccountNumber": "1234567890"
+}
+```
+
+`bankName` / `bankAccountNumber` on the invoice are the **snapshot** values, not the landlord's live profile.
+
+### List invoices
+
+```text
+GET /api/invoices/my              (tenant — own invoices)
+GET /api/landlord/invoices        (landlord — invoices across their tenants)
+```
+
+Supports the same style of query params as property listing (`status`, `page`, `pageSize`).
+
+### Payment already made (tenant)
+
+```text
+POST /api/invoices/{id}/mark-paid-claim
+```
+
+No file/attachment required. Sets `Status = PaymentClaimed` and notifies the landlord.
+
+### Accept payment (landlord)
+
+```text
+POST /api/invoices/{id}/accept-payment
+```
+
+Sets `Status = Paid`, `PaidDate = now()`, and auto-generates a receipt. The API must verify the authenticated landlord owns the property behind the invoice.
+
+### Reject payment (landlord)
+
+```text
+POST /api/invoices/{id}/reject-payment
+```
+
+Request concept:
+
+```json
+{
+  "reason": "Amount transferred does not match the invoice total."
+}
+```
+
+`reason` is **required** — the API returns `422` if missing. Sets `Status = Unpaid`; the same invoice/due date is reused (no new invoice is generated).
+
+### Download PDF
+
+```text
+GET /api/invoices/{id}/pdf
+GET /api/receipts/{id}/pdf
+```
+
+Returns a PDF file (`application/pdf`). Payment gateway integration is out of scope for now — invoices/receipts document a manual bank-transfer workflow.
+
+---
+
+## 15. Payment Notification & Dashboard Integration
+
+### Landlord: configure scheduled reminder
+
+```text
+PUT /api/rental-requests/{id}/payment-schedule
+```
+
+Request concept:
+
+```json
+{
+  "scheduleDay": 1
+}
+```
+
+### Landlord: send manual reminder
+
+```text
+POST /api/rental-requests/{id}/payment-reminder
+```
+
+Every call creates one notification record; it does not generate an invoice.
+
+### Get notifications
+
+```text
+GET /api/notifications/my
+```
+
+Returns notifications scoped to the authenticated user's role — a tenant sees `Scheduled`/`Manual` reminders, a landlord sees `Overdue` notices and payment-claimed alerts.
+
+### Dashboard
+
+```text
+GET /api/dashboard/landlord
+GET /api/dashboard/tenant
+```
+
+Landlord dashboard response concept:
+
+```json
+{
+  "totalCollectedThisMonth": 3600.00,
+  "overdueCount": 2,
+  "tenants": [
+    { "tenantName": "...", "propertyTitle": "...", "invoiceStatus": "Unpaid", "dueDate": "..." }
+  ]
+}
+```
+
+Tenant dashboard response concept:
+
+```json
+{
+  "currentInvoice": { "status": "Unpaid", "totalAmount": 1225.00, "dueDate": "..." },
+  "history": [
+    { "invoiceNumber": "...", "status": "Paid", "hasReceipt": true }
+  ]
+}
+```
+
+Both dashboards link out to `GET /api/invoices/{id}/pdf` and `GET /api/receipts/{id}/pdf` for each history row.
+
+---
+
+## 16. API Response Standard
 
 The final API should use a consistent response format.
 
@@ -483,7 +709,7 @@ The exact response envelope can be changed before API implementation, but once f
 
 ---
 
-## 13. HTTP Status Code Contract
+## 17. HTTP Status Code Contract
 
 | Status | Meaning | Mobile behavior |
 |---|---|---|
@@ -500,7 +726,7 @@ The exact response envelope can be changed before API implementation, but once f
 
 ---
 
-## 14. Mobile API Client
+## 18. Mobile API Client
 
 Recommended responsibility:
 
@@ -523,7 +749,7 @@ Feature code should not manually construct raw HTTP requests everywhere.
 
 ---
 
-## 15. Repository Boundary
+## 19. Repository Boundary
 
 Recommended flow:
 
@@ -547,7 +773,7 @@ This prevents UI code from becoming coupled to HTTP implementation details.
 
 ---
 
-## 16. Authentication Storage
+## 20. Authentication Storage
 
 JWT access tokens must be stored using secure storage.
 
@@ -571,7 +797,7 @@ Never log the token.
 
 ---
 
-## 17. Pagination
+## 21. Pagination
 
 Property listing should support pagination from the beginning.
 
@@ -597,7 +823,7 @@ The exact pagination contract will be finalized in the API.
 
 ---
 
-## 18. Image Handling
+## 22. Image Handling
 
 The mobile application should:
 
@@ -612,7 +838,7 @@ The API should provide mobile-consumable image URLs.
 
 ---
 
-## 19. Offline / Network Handling
+## 23. Offline / Network Handling
 
 At minimum, the mobile application should distinguish:
 
@@ -629,7 +855,7 @@ Future versions may add offline caching.
 
 ---
 
-## 20. Integration Matrix
+## 24. Integration Matrix
 
 | Mobile Feature | API | Database Area |
 |---|---|---|
@@ -648,10 +874,24 @@ Future versions may add offline caching.
 | Add property | `/properties` | Properties |
 | Edit property | `/properties/{id}` | Properties |
 | Property image | `/properties/{id}/images` | PropertyImages |
+| Link to landlord | `/auth/link-landlord` | Users |
+| Update bank details | `/users/me/bank-details` | Users |
+| Invoice details | `/invoices/{id}` | Invoices + InvoiceItems |
+| Tenant invoice list | `/invoices/my` | Invoices |
+| Landlord invoice list | `/landlord/invoices` | Invoices |
+| Payment already made | `/invoices/{id}/mark-paid-claim` | Invoices |
+| Accept payment | `/invoices/{id}/accept-payment` | Invoices + Receipts |
+| Reject payment | `/invoices/{id}/reject-payment` | Invoices |
+| Invoice/receipt PDF | `/invoices/{id}/pdf`, `/receipts/{id}/pdf` | Invoices + Receipts |
+| Scheduled reminder config | `/rental-requests/{id}/payment-schedule` | PaymentNotifications |
+| Manual reminder | `/rental-requests/{id}/payment-reminder` | PaymentNotifications |
+| Notifications | `/notifications/my` | PaymentNotifications |
+| Landlord dashboard | `/dashboard/landlord` | Invoices + RentalRequests |
+| Tenant dashboard | `/dashboard/tenant` | Invoices + Receipts |
 
 ---
 
-## 21. AI Agent Rules
+## 25. AI Agent Rules
 
 Before changing an API integration:
 
@@ -668,7 +908,7 @@ Before changing an API integration:
 
 ---
 
-## 22. Endpoint Status
+## 26. Endpoint Status
 
 The endpoints in this document are **planned contracts**, not currently implemented endpoints.
 
@@ -692,7 +932,7 @@ This prevents an AI agent from assuming that a documented endpoint already exist
 
 ---
 
-## 23. Integration Checklist
+## 27. Integration Checklist
 
 ### Authentication
 
@@ -736,3 +976,33 @@ This prevents an AI agent from assuming that a documented endpoint already exist
 - [ ] Get
 - [ ] Update
 - [ ] Profile image
+- [ ] Bank details (landlord)
+
+### Landlord Linking
+
+- [ ] Landlord code shown on landlord profile
+- [ ] Tenant link via landlord code
+- [ ] Property visibility scoped to linked landlord
+
+### Billing
+
+- [ ] Invoice details
+- [ ] Tenant invoice list
+- [ ] Landlord invoice list
+- [ ] Payment already made (tenant)
+- [ ] Accept payment (landlord)
+- [ ] Reject payment with reason (landlord)
+- [ ] Invoice PDF download
+- [ ] Receipt PDF download
+
+### Payment Notification
+
+- [ ] Scheduled reminder config
+- [ ] Manual reminder
+- [ ] Overdue notice (landlord)
+- [ ] Notification list
+
+### Dashboard
+
+- [ ] Landlord dashboard summary
+- [ ] Tenant dashboard summary
